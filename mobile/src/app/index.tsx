@@ -69,6 +69,8 @@ type Goal = {
   detail: string;
   category: 'MOVE' | 'FUEL' | 'FOCUS';
   done: boolean;
+  completedDate?: string;
+  completionDates?: string[];
   reminder?: GoalReminder;
 };
 
@@ -83,9 +85,10 @@ type WeeklyGoal = {
   id: string;
   title: string;
   target: number;
-  current: number;
   unit: string;
   category: Goal['category'];
+  plannedDays: number[];
+  completionDates: string[];
 };
 
 type Friend = {
@@ -122,16 +125,71 @@ const starterGoals: Goal[] = [
   { id: 'g3', title: 'Evening walk', detail: '30 min · Phone stays home', category: 'FOCUS', done: false },
 ];
 
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function startOfCurrentWeek() {
+  const date = new Date();
+  const day = date.getDay() || 7;
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - day + 1);
+  return date;
+}
+
+function weekDateKey(offset: number) {
+  const date = startOfCurrentWeek();
+  date.setDate(date.getDate() + offset);
+  return dateKey(date);
+}
+
+function currentWeekDates() {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = startOfCurrentWeek();
+    date.setDate(date.getDate() + index);
+    return date;
+  });
+}
+
+function weeklyGoalMatchesDaily(weeklyGoal: WeeklyGoal, dailyGoal: Goal) {
+  if (weeklyGoal.id === 'weekly-exercise') return dailyGoal.category === 'MOVE';
+  if (weeklyGoal.id === 'weekly-meals') return dailyGoal.category === 'FUEL';
+  const keywords = weeklyGoal.title
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word.length > 3 && !['enough', 'minutes'].includes(word));
+  return keywords.some((word) => dailyGoal.title.toLowerCase().includes(word));
+}
+
 const starterWeeklyGoals: WeeklyGoal[] = [
-  { id: 'weekly-exercise', title: 'Exercise', target: 4, current: 3, unit: 'times', category: 'MOVE' },
-  { id: 'weekly-meals', title: 'Balanced meals', target: 5, current: 2, unit: 'meals', category: 'FUEL' },
+  {
+    id: 'weekly-exercise',
+    title: 'Exercise',
+    target: 3,
+    unit: 'times',
+    category: 'MOVE',
+    plannedDays: [1, 3, 6],
+    completionDates: [weekDateKey(0), weekDateKey(2)],
+  },
+  {
+    id: 'weekly-meals',
+    title: 'Balanced meals',
+    target: 5,
+    unit: 'meals',
+    category: 'FUEL',
+    plannedDays: [1, 2, 3, 4, 5],
+    completionDates: [weekDateKey(0), weekDateKey(1)],
+  },
 ];
 
 const weeklyGoalIdeas: WeeklyGoal[] = [
-  { id: 'weekly-walks', title: 'Go for a walk', target: 4, current: 0, unit: 'days', category: 'MOVE' },
-  { id: 'weekly-water', title: 'Drink enough water', target: 7, current: 0, unit: 'days', category: 'FUEL' },
-  { id: 'weekly-read', title: 'Read for 20 minutes', target: 4, current: 0, unit: 'days', category: 'FOCUS' },
-  { id: 'weekly-sleep', title: 'Sleep on time', target: 5, current: 0, unit: 'nights', category: 'FOCUS' },
+  { id: 'weekly-walks', title: 'Go for a walk', target: 4, unit: 'days', category: 'MOVE', plannedDays: [1, 3, 5, 7], completionDates: [] },
+  { id: 'weekly-water', title: 'Drink enough water', target: 7, unit: 'days', category: 'FUEL', plannedDays: [1, 2, 3, 4, 5, 6, 7], completionDates: [] },
+  { id: 'weekly-read', title: 'Read for 20 minutes', target: 4, unit: 'days', category: 'FOCUS', plannedDays: [2, 4, 6, 7], completionDates: [] },
+  { id: 'weekly-sleep', title: 'Sleep on time', target: 5, unit: 'nights', category: 'FOCUS', plannedDays: [1, 2, 3, 4, 5], completionDates: [] },
 ];
 
 const people: Friend[] = [
@@ -202,6 +260,7 @@ export default function App() {
   const [posts, setPosts] = useState(starterPosts);
   const [reacted, setReacted] = useState<Record<string, Reaction[]>>({});
   const [logGoal, setLogGoal] = useState<Goal | null>(null);
+  const [logWeeklyGoalId, setLogWeeklyGoalId] = useState<string | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(storageKey)
@@ -209,12 +268,40 @@ export default function App() {
         if (!value) return;
         const state = JSON.parse(value);
         setUser(state.user ?? null);
-        setGoals(state.goals ?? starterGoals);
+        const today = dateKey(new Date());
+        setGoals(
+          (state.goals ?? starterGoals).map((goal: Goal) => {
+            const completionDates = Array.isArray(goal.completionDates)
+              ? goal.completionDates
+              : goal.completedDate
+                ? [goal.completedDate]
+                : goal.done
+                  ? [today]
+                  : [];
+            return {
+              ...goal,
+              completionDates,
+              completedDate: completionDates.at(-1),
+              done: completionDates.includes(today),
+            };
+          }),
+        );
         setWeeklyGoals(
           Array.isArray(state.weeklyGoals)
-            ? state.weeklyGoals
+            ? state.weeklyGoals.map((goal: WeeklyGoal & { current?: number }) => ({
+                ...goal,
+                plannedDays:
+                  goal.plannedDays ??
+                  Array.from({ length: Math.min(goal.target, 7) }, (_, index) => index + 1),
+                completionDates:
+                  goal.completionDates ??
+                  Array.from(
+                    { length: Math.min(goal.current ?? 0, 7) },
+                    (_, index) => weekDateKey(index),
+                  ),
+              }))
             : [
-                { ...starterWeeklyGoals[0], target: state.weeklyGoals?.exerciseTarget ?? 4 },
+                { ...starterWeeklyGoals[0], target: state.weeklyGoals?.exerciseTarget ?? 3 },
                 { ...starterWeeklyGoals[1], target: state.weeklyGoals?.mealTarget ?? 5 },
               ],
         );
@@ -234,18 +321,63 @@ export default function App() {
   }, [loading, user, goals, weeklyGoals, friends, posts, reacted]);
 
   function openLog(goal?: Goal) {
+    setLogWeeklyGoalId(null);
     setLogGoal(goal ?? null);
+    setTab('log');
+  }
+
+  function openWeeklyLog(goal: WeeklyGoal) {
+    setLogWeeklyGoalId(goal.id);
+    setLogGoal({
+      id: `weekly:${goal.id}`,
+      title: goal.title,
+      detail: '',
+      category: goal.category,
+      done: false,
+    });
     setTab('log');
   }
 
   function publishPost(post: Post) {
     setPosts((current) => [post, ...current]);
-    if (logGoal) {
+    if (logWeeklyGoalId) {
+      const today = dateKey(new Date());
+      setWeeklyGoals((current) =>
+        current.map((goal) =>
+          goal.id === logWeeklyGoalId && !goal.completionDates.includes(today)
+            ? { ...goal, completionDates: [...goal.completionDates, today] }
+            : goal,
+        ),
+      );
+    } else if (logGoal) {
+      const completedToday = dateKey(new Date());
       setGoals((current) =>
-        current.map((goal) => (goal.id === logGoal.id ? { ...goal, done: true } : goal)),
+        current.map((goal) =>
+          goal.id === logGoal.id
+            ? {
+                ...goal,
+                done: true,
+                completedDate: completedToday,
+                completionDates: Array.from(
+                  new Set([...(goal.completionDates ?? []), completedToday]),
+                ),
+              }
+            : goal,
+        ),
+      );
+      setWeeklyGoals((current) =>
+        current.map((goal) =>
+          weeklyGoalMatchesDaily(goal, logGoal)
+            ? {
+                ...goal,
+                completionDates: Array.from(new Set([...goal.completionDates, completedToday])),
+              }
+            : goal,
+        ),
       );
     }
     setLogGoal(null);
+    setLogWeeklyGoalId(null);
     setTab('feed');
   }
 
@@ -295,6 +427,7 @@ export default function App() {
             goals={goals}
             weeklyGoals={weeklyGoals}
             onLog={openLog}
+            onLogWeekly={openWeeklyLog}
           />
         )}
         {tab === 'feed' && (
@@ -330,7 +463,11 @@ export default function App() {
           />
         )}
       </View>
-      <BottomNav tab={tab} onChange={(next) => { setLogGoal(null); setTab(next); }} />
+      <BottomNav tab={tab} onChange={(next) => {
+        setLogGoal(null);
+        setLogWeeklyGoalId(null);
+        setTab(next);
+      }} />
     </SafeAreaView>
   );
 }
@@ -435,14 +572,18 @@ function TodayScreen({
   goals,
   weeklyGoals,
   onLog,
+  onLogWeekly,
 }: {
   user: User;
   goals: Goal[];
   weeklyGoals: WeeklyGoal[];
   onLog: (goal: Goal) => void;
+  onLogWeekly: (goal: WeeklyGoal) => void;
 }) {
   const completed = goals.filter((goal) => goal.done).length;
   const progress = `${(completed / goals.length) * 100}%` as `${number}%`;
+  const weekDates = currentWeekDates();
+  const today = dateKey(new Date());
   const dateLabel = new Intl.DateTimeFormat(undefined, {
     weekday: 'long',
     month: 'long',
@@ -456,6 +597,29 @@ function TodayScreen({
           <Text style={styles.nativeTodayDate}>{dateLabel}</Text>
         </View>
         <View style={styles.nativeAvatar}><Text style={styles.nativeAvatarText}>{initials(user.name)}</Text></View>
+      </View>
+
+      <View style={styles.weekCalendar}>
+        {weekDates.map((date, index) => {
+          const key = dateKey(date);
+          const isToday = key === today;
+          const completionCount =
+            goals.filter((goal) => goal.completionDates?.includes(key)).length +
+            weeklyGoals.filter((goal) => goal.completionDates.includes(key)).length;
+          return (
+            <View key={key} style={styles.weekCalendarDay}>
+              <Text style={[styles.weekCalendarLabel, isToday && styles.weekCalendarLabelToday]}>
+                {['M', 'T', 'W', 'T', 'F', 'S', 'S'][index]}
+              </Text>
+              <View style={[styles.weekCalendarDate, isToday && styles.weekCalendarDateToday]}>
+                <Text style={[styles.weekCalendarNumber, isToday && styles.weekCalendarNumberToday]}>
+                  {date.getDate()}
+                </Text>
+              </View>
+              <View style={[styles.weekCalendarDot, completionCount > 0 && styles.weekCalendarDotDone]} />
+            </View>
+          );
+        })}
       </View>
 
       <View style={styles.nativeSectionHeader}>
@@ -522,31 +686,97 @@ function TodayScreen({
       <View style={styles.nativeSectionHeader}>
         <Text style={styles.nativeSectionTitle}>This week</Text>
       </View>
-      <View style={styles.nativeList}>
-        {weeklyGoals.map((goal, index) => {
+      <View style={styles.weeklyDashboardList}>
+        {weeklyGoals.map((goal) => {
           const colors = categoryColors[goal.category];
-          const symbol =
-            goal.category === 'MOVE'
-              ? { ios: 'figure.run' as const, android: 'directions_run' as const, web: 'directions_run' as const }
-              : goal.category === 'FUEL'
-                ? { ios: 'fork.knife' as const, android: 'restaurant' as const, web: 'restaurant' as const }
-                : { ios: 'book.closed' as const, android: 'menu_book' as const, web: 'menu_book' as const };
+          const weekKeys = weekDates.map(dateKey);
+          const current = goal.completionDates.filter((date) => weekKeys.includes(date)).length;
+          const remaining = Math.max(0, goal.target - current);
+          const completedToday = goal.completionDates.includes(today);
+          const percent = Math.min(100, Math.round((current / goal.target) * 100));
           return (
-            <View
-              key={goal.id}
-              style={[styles.nativeWeekRow, index === weeklyGoals.length - 1 && styles.nativeLastRow]}>
-              <View style={[styles.nativeWeekIcon, { backgroundColor: colors.tint }]}>
-                <SymbolView name={symbol} size={18} tintColor={colors.accent} />
-              </View>
-              <View style={styles.nativeGoalCopy}>
-                <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
-                <Text style={styles.nativeGoalCategory}>
-                  {goal.current} of {goal.target} {goal.unit}
+            <View key={goal.id} style={styles.weeklyDashboardCard}>
+              <View style={styles.weeklyDashboardTop}>
+                <View style={styles.nativeGoalCopy}>
+                  <Text style={styles.weeklyDashboardTitle}>{goal.title}</Text>
+                  <Text style={styles.weeklyDashboardStatus}>
+                    {remaining === 0
+                      ? 'Weekly goal completed'
+                      : `${remaining} ${remaining === 1 ? 'time' : 'times'} left · auto-tracked`}
+                  </Text>
+                </View>
+                <Text style={[styles.weeklyDashboardCount, { color: colors.accent }]}>
+                  {current}<Text style={styles.weeklyDashboardTarget}>/{goal.target}</Text>
                 </Text>
               </View>
-              <Text style={[styles.nativeWeekCount, { color: colors.accent }]}>
-                {Math.min(100, Math.round((goal.current / goal.target) * 100))}%
-              </Text>
+              <View style={styles.weeklyProgressTrack}>
+                <View
+                  style={[
+                    styles.weeklyProgressFill,
+                    { backgroundColor: colors.accent, width: `${percent}%` },
+                  ]}
+                />
+              </View>
+              <View style={styles.weeklyDays}>
+                {weekDates.map((date, index) => {
+                  const key = dateKey(date);
+                  const complete = goal.completionDates.includes(key);
+                  const planned = goal.plannedDays.includes(index + 1);
+                  return (
+                    <View key={key} style={styles.weeklyDay}>
+                      <Text style={styles.weeklyDayLabel}>
+                        {['M', 'T', 'W', 'T', 'F', 'S', 'S'][index]}
+                      </Text>
+                      <View
+                        style={[
+                          styles.weeklyDayCircle,
+                          planned && { backgroundColor: colors.tint },
+                          complete && { backgroundColor: colors.accent },
+                          key === today && !complete && { borderColor: colors.accent },
+                        ]}>
+                        {complete ? (
+                          <SymbolView
+                            name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                            size={11}
+                            tintColor={C.white}
+                          />
+                        ) : (
+                          <Text style={[styles.weeklyDayNumber, planned && { color: colors.accent }]}>
+                            {date.getDate()}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${completedToday ? 'Logged' : 'Complete'} ${goal.title}`}
+                disabled={completedToday}
+                style={({ pressed }) => [
+                  styles.weeklyDoneButton,
+                  { backgroundColor: completedToday ? C.cream : colors.tint },
+                  pressed && styles.nativePressed,
+                ]}
+                onPress={() => onLogWeekly(goal)}>
+                <SymbolView
+                  name={{
+                    ios: completedToday ? 'checkmark.circle.fill' : 'camera.fill',
+                    android: completedToday ? 'check_circle' : 'photo_camera',
+                    web: completedToday ? 'check_circle' : 'photo_camera',
+                  }}
+                  size={16}
+                  tintColor={completedToday ? C.muted : colors.accent}
+                />
+                <Text
+                  style={[
+                    styles.weeklyDoneText,
+                    { color: completedToday ? C.muted : colors.accent },
+                  ]}>
+                  {completedToday ? 'Logged today' : 'Complete with selfie'}
+                </Text>
+              </Pressable>
             </View>
           );
         })}
@@ -612,6 +842,8 @@ function GoalSettingsScreen({
       detail: '',
       category: inferCategory(cleanTitle),
       done: original?.done ?? false,
+      completedDate: original?.completedDate,
+      completionDates: original?.completionDates,
       reminder: nextReminder,
     };
 
@@ -650,6 +882,17 @@ function GoalSettingsScreen({
     const nextWeekly = weeklyGoals.map((goal) =>
       goal.id === id ? { ...goal, target: Math.max(1, Math.min(14, goal.target + amount)) } : goal,
     );
+    onSave(goals, nextWeekly);
+  }
+
+  function togglePlannedDay(id: string, day: number) {
+    const nextWeekly = weeklyGoals.map((goal) => {
+      if (goal.id !== id) return goal;
+      const plannedDays = goal.plannedDays.includes(day)
+        ? goal.plannedDays.filter((value) => value !== day)
+        : [...goal.plannedDays, day].sort((a, b) => a - b);
+      return { ...goal, plannedDays };
+    });
     onSave(goals, nextWeekly);
   }
 
@@ -778,26 +1021,48 @@ function GoalSettingsScreen({
       </View>
 
       <Text style={styles.goalHubSection}>Current weekly goals</Text>
-      <View style={styles.nativeList}>
-        {weeklyGoals.map((goal, index) => (
-          <View
-            key={goal.id}
-            style={[styles.targetRow, index === weeklyGoals.length - 1 && styles.nativeLastRow]}>
-            <View style={styles.nativeGoalCopy}>
-              <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
-              <Text style={styles.nativeGoalCategory}>{goal.target} {goal.unit} per week</Text>
+      <View style={styles.weeklyPlanList}>
+        {weeklyGoals.map((goal) => {
+          const colors = categoryColors[goal.category];
+          return (
+          <View key={goal.id} style={styles.weeklyPlanCard}>
+            <View style={styles.weeklyPlanTop}>
+              <View style={styles.nativeGoalCopy}>
+                <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
+                <Text style={styles.nativeGoalCategory}>{goal.target} {goal.unit} per week</Text>
+              </View>
+              <View style={styles.stepper}>
+                <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, -1)}>
+                  <SymbolView name={{ ios: 'minus', android: 'remove', web: 'remove' }} size={14} tintColor={colors.accent} />
+                </Pressable>
+                <Text style={styles.stepperValue}>{goal.target}</Text>
+                <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, 1)}>
+                  <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={colors.accent} />
+                </Pressable>
+              </View>
             </View>
-            <View style={styles.stepper}>
-              <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, -1)}>
-                <SymbolView name={{ ios: 'minus', android: 'remove', web: 'remove' }} size={14} tintColor={C.coral} />
-              </Pressable>
-              <Text style={styles.stepperValue}>{goal.target}</Text>
-              <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, 1)}>
-                <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={C.coral} />
-              </Pressable>
+            <Text style={styles.weeklyPlanLabel}>PLANNED DAYS · OPTIONAL</Text>
+            <View style={styles.weeklyPlanDays}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, index) => {
+                const selected = goal.plannedDays.includes(index + 1);
+                return (
+                  <Pressable
+                    key={`${label}-${index}`}
+                    style={[
+                      styles.weeklyPlanDay,
+                      selected && { backgroundColor: colors.accent, borderColor: colors.accent },
+                    ]}
+                    onPress={() => togglePlannedDay(goal.id, index + 1)}>
+                    <Text style={[styles.weeklyPlanDayText, selected && styles.weeklyPlanDayTextSelected]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
-        ))}
+          );
+        })}
       </View>
 
       {!!availableIdeas.length && (
@@ -1543,6 +1808,16 @@ const styles = StyleSheet.create({
   nativeTodayTitle: { color: C.inkDark, fontSize: 34, lineHeight: 39, fontWeight: '800', letterSpacing: -1 },
   nativeTodayDate: { color: C.muted, fontSize: 13, marginTop: 3 },
   nativeAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.focusTint, alignItems: 'center', justifyContent: 'center' },
+  weekCalendar: { backgroundColor: C.paper, borderRadius: 16, flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 12, marginBottom: 26 },
+  weekCalendarDay: { flex: 1, alignItems: 'center', gap: 5 },
+  weekCalendarLabel: { color: C.muted, fontSize: 9, fontWeight: '700' },
+  weekCalendarLabelToday: { color: C.focus },
+  weekCalendarDate: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  weekCalendarDateToday: { backgroundColor: C.focus },
+  weekCalendarNumber: { color: C.inkDark, fontSize: 12, fontWeight: '600' },
+  weekCalendarNumberToday: { color: C.white, fontWeight: '800' },
+  weekCalendarDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
+  weekCalendarDotDone: { backgroundColor: C.move },
   nativeAvatarText: { color: C.focus, fontSize: 12, fontWeight: '700' },
   nativeSectionHeader: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   nativeSectionTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
@@ -1567,6 +1842,22 @@ const styles = StyleSheet.create({
   nativeWeekRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
   nativeWeekIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   nativeWeekCount: { color: C.muted, fontSize: 13, fontWeight: '600' },
+  weeklyDashboardList: { gap: 12, marginTop: 10, marginBottom: 8 },
+  weeklyDashboardCard: { backgroundColor: C.paper, borderRadius: 16, padding: 16 },
+  weeklyDashboardTop: { flexDirection: 'row', alignItems: 'center' },
+  weeklyDashboardTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
+  weeklyDashboardStatus: { color: C.muted, fontSize: 12, marginTop: 4 },
+  weeklyDashboardCount: { fontSize: 25, fontWeight: '800', letterSpacing: -0.7 },
+  weeklyDashboardTarget: { color: C.muted, fontSize: 14, fontWeight: '600' },
+  weeklyProgressTrack: { height: 5, borderRadius: 3, backgroundColor: C.cream, overflow: 'hidden', marginTop: 4, marginBottom: 15 },
+  weeklyProgressFill: { height: '100%', borderRadius: 3 },
+  weeklyDays: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
+  weeklyDay: { alignItems: 'center', gap: 5 },
+  weeklyDayLabel: { color: C.muted, fontSize: 9, fontWeight: '700' },
+  weeklyDayCircle: { width: 29, height: 29, borderRadius: 15, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
+  weeklyDayNumber: { color: C.muted, fontSize: 10, fontWeight: '600' },
+  weeklyDoneButton: { minHeight: 38, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  weeklyDoneText: { fontSize: 13, fontWeight: '700' },
   goalSettingsScreen: { flex: 1, backgroundColor: C.cream },
   settingsNav: { height: 52, backgroundColor: C.paper, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   settingsNavTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
@@ -1586,6 +1877,14 @@ const styles = StyleSheet.create({
   goalHubSection: { color: C.inkDark, fontSize: 17, fontWeight: '700', marginLeft: 4, marginBottom: 10 },
   goalHubRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
   goalHubDot: { width: 10, height: 10, borderRadius: 5, marginRight: 13 },
+  weeklyPlanList: { gap: 10, marginBottom: 30 },
+  weeklyPlanCard: { backgroundColor: C.paper, borderRadius: 14, paddingHorizontal: 16, paddingBottom: 15 },
+  weeklyPlanTop: { minHeight: 66, flexDirection: 'row', alignItems: 'center' },
+  weeklyPlanLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 9 },
+  weeklyPlanDays: { flexDirection: 'row', justifyContent: 'space-between' },
+  weeklyPlanDay: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  weeklyPlanDayText: { color: C.muted, fontSize: 11, fontWeight: '700' },
+  weeklyPlanDayTextSelected: { color: C.white },
   weeklyIdeas: { gap: 10, marginBottom: 8 },
   weeklyIdea: { minHeight: 64, borderRadius: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
   weeklyIdeaCopy: { flex: 1 },

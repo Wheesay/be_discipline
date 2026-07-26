@@ -79,9 +79,13 @@ type GoalReminder = {
   notificationId?: string;
 };
 
-type WeeklyGoals = {
-  exerciseTarget: number;
-  mealTarget: number;
+type WeeklyGoal = {
+  id: string;
+  title: string;
+  target: number;
+  current: number;
+  unit: string;
+  category: Goal['category'];
 };
 
 type Friend = {
@@ -118,10 +122,17 @@ const starterGoals: Goal[] = [
   { id: 'g3', title: 'Evening walk', detail: '30 min · Phone stays home', category: 'FOCUS', done: false },
 ];
 
-const starterWeeklyGoals: WeeklyGoals = {
-  exerciseTarget: 4,
-  mealTarget: 5,
-};
+const starterWeeklyGoals: WeeklyGoal[] = [
+  { id: 'weekly-exercise', title: 'Exercise', target: 4, current: 3, unit: 'times', category: 'MOVE' },
+  { id: 'weekly-meals', title: 'Balanced meals', target: 5, current: 2, unit: 'meals', category: 'FUEL' },
+];
+
+const weeklyGoalIdeas: WeeklyGoal[] = [
+  { id: 'weekly-walks', title: 'Go for a walk', target: 4, current: 0, unit: 'days', category: 'MOVE' },
+  { id: 'weekly-water', title: 'Drink enough water', target: 7, current: 0, unit: 'days', category: 'FUEL' },
+  { id: 'weekly-read', title: 'Read for 20 minutes', target: 4, current: 0, unit: 'days', category: 'FOCUS' },
+  { id: 'weekly-sleep', title: 'Sleep on time', target: 5, current: 0, unit: 'nights', category: 'FOCUS' },
+];
 
 const people: Friend[] = [
   { id: 'f1', name: 'Maya Koh', username: '@mayamoves', initials: 'MK', color: '#DF8168', mutual: 6, added: true },
@@ -186,7 +197,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('today');
   const [goals, setGoals] = useState(starterGoals);
-  const [weeklyGoals, setWeeklyGoals] = useState(starterWeeklyGoals);
+  const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoal[]>(starterWeeklyGoals);
   const [friends, setFriends] = useState(people);
   const [posts, setPosts] = useState(starterPosts);
   const [reacted, setReacted] = useState<Record<string, Reaction[]>>({});
@@ -199,7 +210,14 @@ export default function App() {
         const state = JSON.parse(value);
         setUser(state.user ?? null);
         setGoals(state.goals ?? starterGoals);
-        setWeeklyGoals(state.weeklyGoals ?? starterWeeklyGoals);
+        setWeeklyGoals(
+          Array.isArray(state.weeklyGoals)
+            ? state.weeklyGoals
+            : [
+                { ...starterWeeklyGoals[0], target: state.weeklyGoals?.exerciseTarget ?? 4 },
+                { ...starterWeeklyGoals[1], target: state.weeklyGoals?.mealTarget ?? 5 },
+              ],
+        );
         setFriends(state.friends ?? people);
         setPosts(state.posts ?? starterPosts);
         setReacted(state.reacted ?? {});
@@ -305,11 +323,9 @@ export default function App() {
           <GoalSettingsScreen
             goals={goals}
             weeklyGoals={weeklyGoals}
-            onCancel={() => setTab('today')}
             onSave={(nextGoals, nextWeeklyGoals) => {
               setGoals(nextGoals);
               setWeeklyGoals(nextWeeklyGoals);
-              setTab('today');
             }}
           />
         )}
@@ -422,7 +438,7 @@ function TodayScreen({
 }: {
   user: User;
   goals: Goal[];
-  weeklyGoals: WeeklyGoals;
+  weeklyGoals: WeeklyGoal[];
   onLog: (goal: Goal) => void;
 }) {
   const completed = goals.filter((goal) => goal.done).length;
@@ -473,7 +489,6 @@ function TodayScreen({
               </View>
               <View style={styles.nativeGoalCopy}>
                 <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
-                {!!goal.detail && <Text style={styles.nativeGoalDetail}>{goal.detail}</Text>}
                 <Text style={[styles.nativeGoalCategory, { color: colors.accent }]}>
                   {goal.category.toLowerCase()}
                   {goal.reminder?.enabled
@@ -508,30 +523,33 @@ function TodayScreen({
         <Text style={styles.nativeSectionTitle}>This week</Text>
       </View>
       <View style={styles.nativeList}>
-        <View style={styles.nativeWeekRow}>
-          <View style={[styles.nativeWeekIcon, { backgroundColor: C.moveTint }]}>
-            <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} size={18} tintColor={C.move} />
-          </View>
-          <View style={styles.nativeGoalCopy}>
-            <Text style={styles.nativeGoalTitle}>Exercise</Text>
-            <Text style={styles.nativeGoalCategory}>3 of {weeklyGoals.exerciseTarget} times</Text>
-          </View>
-          <Text style={[styles.nativeWeekCount, { color: C.move }]}>
-            {Math.min(100, Math.round((3 / weeklyGoals.exerciseTarget) * 100))}%
-          </Text>
-        </View>
-        <View style={[styles.nativeWeekRow, styles.nativeLastRow]}>
-          <View style={[styles.nativeWeekIcon, { backgroundColor: C.fuelTint }]}>
-            <SymbolView name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} size={18} tintColor={C.fuel} />
-          </View>
-          <View style={styles.nativeGoalCopy}>
-            <Text style={styles.nativeGoalTitle}>Balanced meals</Text>
-            <Text style={styles.nativeGoalCategory}>2 of {weeklyGoals.mealTarget} meals</Text>
-          </View>
-          <Text style={[styles.nativeWeekCount, { color: C.fuel }]}>
-            {Math.min(100, Math.round((2 / weeklyGoals.mealTarget) * 100))}%
-          </Text>
-        </View>
+        {weeklyGoals.map((goal, index) => {
+          const colors = categoryColors[goal.category];
+          const symbol =
+            goal.category === 'MOVE'
+              ? { ios: 'figure.run' as const, android: 'directions_run' as const, web: 'directions_run' as const }
+              : goal.category === 'FUEL'
+                ? { ios: 'fork.knife' as const, android: 'restaurant' as const, web: 'restaurant' as const }
+                : { ios: 'book.closed' as const, android: 'menu_book' as const, web: 'menu_book' as const };
+          return (
+            <View
+              key={goal.id}
+              style={[styles.nativeWeekRow, index === weeklyGoals.length - 1 && styles.nativeLastRow]}>
+              <View style={[styles.nativeWeekIcon, { backgroundColor: colors.tint }]}>
+                <SymbolView name={symbol} size={18} tintColor={colors.accent} />
+              </View>
+              <View style={styles.nativeGoalCopy}>
+                <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
+                <Text style={styles.nativeGoalCategory}>
+                  {goal.current} of {goal.target} {goal.unit}
+                </Text>
+              </View>
+              <Text style={[styles.nativeWeekCount, { color: colors.accent }]}>
+                {Math.min(100, Math.round((goal.current / goal.target) * 100))}%
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -540,325 +558,275 @@ function TodayScreen({
 function GoalSettingsScreen({
   goals,
   weeklyGoals,
-  onCancel,
   onSave,
 }: {
   goals: Goal[];
-  weeklyGoals: WeeklyGoals;
-  onCancel: () => void;
-  onSave: (goals: Goal[], weeklyGoals: WeeklyGoals) => void;
+  weeklyGoals: WeeklyGoal[];
+  onSave: (goals: Goal[], weeklyGoals: WeeklyGoal[]) => void;
 }) {
-  const [draftGoals, setDraftGoals] = useState(goals);
-  const [draftWeekly, setDraftWeekly] = useState(weeklyGoals);
-  const categories: Goal['category'][] = ['MOVE', 'FUEL', 'FOCUS'];
-  const validGoals = draftGoals.filter((goal) => goal.title.trim());
+  const [editing, setEditing] = useState<Goal | 'new' | null>(null);
+  const [title, setTitle] = useState('');
+  const [reminder, setReminder] = useState<GoalReminder>({
+    enabled: false,
+    hour: 9,
+    minute: 0,
+  });
 
-  function updateGoal(id: string, update: Partial<Goal>) {
-    setDraftGoals((current) =>
-      current.map((goal) => (goal.id === id ? { ...goal, ...update } : goal)),
+  function beginNewGoal() {
+    setTitle('');
+    setReminder({ enabled: false, hour: 9, minute: 0 });
+    setEditing('new');
+  }
+
+  function beginEditGoal(goal: Goal) {
+    setTitle(goal.title);
+    setReminder(goal.reminder ?? { enabled: false, hour: 9, minute: 0 });
+    setEditing(goal);
+  }
+
+  function inferCategory(value: string): Goal['category'] {
+    if (/walk|run|gym|workout|exercise|train|yoga|swim|cycle/i.test(value)) return 'MOVE';
+    if (/meal|cook|food|water|eat|protein|vegetable/i.test(value)) return 'FUEL';
+    return 'FOCUS';
+  }
+
+  async function saveDailyGoal() {
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return;
+    const original = editing === 'new' ? undefined : editing ?? undefined;
+    let nextReminder: GoalReminder | undefined = reminder;
+    const reminderUnchanged =
+      original?.reminder?.enabled &&
+      original.reminder.notificationId &&
+      reminder.enabled &&
+      original.reminder.hour === reminder.hour &&
+      original.reminder.minute === reminder.minute;
+
+    if (original?.reminder?.notificationId && !reminderUnchanged) {
+      await Notifications.cancelScheduledNotificationAsync(original.reminder.notificationId);
+    }
+
+    const nextGoal: Goal = {
+      id: original?.id ?? `goal-${Date.now()}`,
+      title: cleanTitle,
+      detail: '',
+      category: inferCategory(cleanTitle),
+      done: original?.done ?? false,
+      reminder: nextReminder,
+    };
+
+    if (reminder.enabled && !reminderUnchanged) {
+      const granted = await ensureNotificationPermission();
+      if (granted) {
+        const notificationId = await scheduleGoalReminder(nextGoal);
+        nextReminder = { ...reminder, notificationId };
+      } else {
+        nextReminder = { ...reminder, enabled: false, notificationId: undefined };
+        Alert.alert('Alarm not enabled', 'Allow notifications in phone settings to use goal alarms.');
+      }
+    } else if (reminderUnchanged) {
+      nextReminder = { ...reminder, notificationId: original?.reminder?.notificationId };
+    } else {
+      nextReminder = { ...reminder, notificationId: undefined };
+    }
+
+    const savedGoal = { ...nextGoal, reminder: nextReminder };
+    const nextGoals = original
+      ? goals.map((goal) => (goal.id === original.id ? savedGoal : goal))
+      : [...goals, savedGoal];
+    onSave(nextGoals, weeklyGoals);
+    setEditing(null);
+  }
+
+  async function deleteGoal(goal: Goal) {
+    if (goal.reminder?.notificationId) {
+      await Notifications.cancelScheduledNotificationAsync(goal.reminder.notificationId);
+    }
+    onSave(goals.filter((item) => item.id !== goal.id), weeklyGoals);
+    setEditing(null);
+  }
+
+  function changeWeeklyTarget(id: string, amount: number) {
+    const nextWeekly = weeklyGoals.map((goal) =>
+      goal.id === id ? { ...goal, target: Math.max(1, Math.min(14, goal.target + amount)) } : goal,
+    );
+    onSave(goals, nextWeekly);
+  }
+
+  function addWeeklyGoal(idea: WeeklyGoal) {
+    if (weeklyGoals.some((goal) => goal.id === idea.id)) return;
+    onSave(goals, [...weeklyGoals, idea]);
+  }
+
+  if (editing) {
+    const existing = editing === 'new' ? null : editing;
+    return (
+      <KeyboardAvoidingView
+        style={styles.goalSettingsScreen}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.settingsNav}>
+          <Pressable accessibilityRole="button" onPress={() => setEditing(null)}>
+            <Text style={styles.settingsNavAction}>Cancel</Text>
+          </Pressable>
+          <Text style={styles.settingsNavTitle}>{existing ? 'Edit goal' : 'New goal'}</Text>
+          <Pressable accessibilityRole="button" disabled={!title.trim()} onPress={saveDailyGoal}>
+            <Text style={[styles.settingsNavAction, styles.settingsSave, !title.trim() && styles.disabled]}>
+              Save
+            </Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.singleGoalContent}>
+          <Text style={styles.settingsSectionLabel}>ACTIVITY</Text>
+          <View style={styles.singleGoalCard}>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="30 minute walk"
+              placeholderTextColor={C.sage}
+              style={styles.singleGoalInput}
+              autoFocus
+              returnKeyType="done"
+            />
+          </View>
+
+          <Text style={styles.settingsSectionLabel}>ALARM · OPTIONAL</Text>
+          <View style={styles.singleGoalCard}>
+            <View style={styles.simpleAlarmRow}>
+              <View style={styles.goalReminderLabel}>
+                <SymbolView
+                  name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
+                  size={18}
+                  tintColor={reminder.enabled ? C.coral : C.muted}
+                />
+                <Text style={styles.goalReminderText}>
+                  {reminder.enabled ? formatTime(reminder.hour, reminder.minute) : 'Off'}
+                </Text>
+              </View>
+              <Switch
+                value={reminder.enabled}
+                onValueChange={(enabled) => setReminder((current) => ({ ...current, enabled }))}
+                trackColor={{ false: '#D1D1D6', true: '#9A9CF5' }}
+                thumbColor={C.white}
+              />
+            </View>
+            {reminder.enabled && (
+              <DateTimePicker
+                value={timeAsDate(reminder)}
+                mode="time"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onValueChange={(_event, date) =>
+                  setReminder((current) => ({
+                    ...current,
+                    hour: date.getHours(),
+                    minute: date.getMinutes(),
+                    notificationId: undefined,
+                  }))
+                }
+                accentColor={C.coral}
+              />
+            )}
+          </View>
+
+          {existing && (
+            <Pressable style={styles.deleteGoalButton} onPress={() => deleteGoal(existing)}>
+              <Text style={styles.deleteGoalText}>Delete goal</Text>
+            </Pressable>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
-  function addGoal() {
-    setDraftGoals((current) => [
-      ...current,
-      {
-        id: `goal-${Date.now()}`,
-        title: '',
-        detail: '',
-        category: 'FOCUS',
-        done: false,
-      },
-    ]);
-  }
-
-  function changeTarget(key: keyof WeeklyGoals, amount: number) {
-    setDraftWeekly((current) => ({
-      ...current,
-      [key]: Math.max(1, Math.min(key === 'mealTarget' ? 14 : 7, current[key] + amount)),
-    }));
-  }
-
-  async function saveSettings() {
-    const originalById = new Map(goals.map((goal) => [goal.id, goal]));
-    const nextGoals = validGoals.map((goal) => ({
-      ...goal,
-      title: goal.title.trim(),
-      detail: goal.detail.trim(),
-    }));
-    const nextIds = new Set(nextGoals.map((goal) => goal.id));
-
-    for (const original of goals) {
-      if (!nextIds.has(original.id) && original.reminder?.notificationId) {
-        await Notifications.cancelScheduledNotificationAsync(original.reminder.notificationId);
-      }
-    }
-
-    let permission: boolean | undefined;
-    let permissionWarningShown = false;
-    const scheduledGoals: Goal[] = [];
-
-    for (const goal of nextGoals) {
-      const original = originalById.get(goal.id);
-      const previousReminder = original?.reminder;
-      const reminder = goal.reminder;
-      const unchanged =
-        reminder?.enabled &&
-        previousReminder?.enabled &&
-        previousReminder.notificationId &&
-        reminder.hour === previousReminder.hour &&
-        reminder.minute === previousReminder.minute;
-
-      if (previousReminder?.notificationId && !unchanged) {
-        await Notifications.cancelScheduledNotificationAsync(previousReminder.notificationId);
-      }
-
-      if (!reminder?.enabled) {
-        scheduledGoals.push({ ...goal, reminder: reminder ? { ...reminder, notificationId: undefined } : undefined });
-        continue;
-      }
-
-      if (unchanged) {
-        scheduledGoals.push({
-          ...goal,
-          reminder: { ...reminder, notificationId: previousReminder.notificationId },
-        });
-        continue;
-      }
-
-      if (permission === undefined) permission = await ensureNotificationPermission();
-      if (!permission) {
-        scheduledGoals.push({ ...goal, reminder: { ...reminder, enabled: false, notificationId: undefined } });
-        if (!permissionWarningShown) {
-          Alert.alert(
-            'Notifications are off',
-            'The goals were saved, but reminders remain off until notifications are allowed in phone settings.',
-          );
-          permissionWarningShown = true;
-        }
-        continue;
-      }
-
-      const notificationId = await scheduleGoalReminder(goal);
-      scheduledGoals.push({ ...goal, reminder: { ...reminder, notificationId } });
-    }
-
-    onSave(scheduledGoals, draftWeekly);
-  }
+  const availableIdeas = weeklyGoalIdeas.filter(
+    (idea) => !weeklyGoals.some((goal) => goal.id === idea.id),
+  );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.goalSettingsScreen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.settingsNav}>
-        <Pressable accessibilityRole="button" onPress={onCancel}>
-          <Text style={styles.settingsNavAction}>Cancel</Text>
-        </Pressable>
-        <Text style={styles.settingsNavTitle}>Goals</Text>
-        <Pressable
-          accessibilityRole="button"
-          disabled={!validGoals.length}
-          onPress={saveSettings}>
-          <Text style={[styles.settingsNavAction, styles.settingsSave, !validGoals.length && styles.disabled]}>
-            Save
-          </Text>
-        </Pressable>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.goalHubContent}>
+      <Text style={styles.goalHubTitle}>Goals</Text>
+      <Pressable style={styles.newGoalButton} onPress={beginNewGoal}>
+        <View style={styles.newGoalIcon}>
+          <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={18} tintColor={C.white} />
+        </View>
+        <Text style={styles.newGoalText}>Set a new goal</Text>
+      </Pressable>
+
+      <Text style={styles.goalHubSection}>Current daily goals</Text>
+      <View style={styles.nativeList}>
+        {goals.map((goal, index) => {
+          const colors = categoryColors[goal.category];
+          return (
+            <Pressable
+              key={goal.id}
+              style={[styles.goalHubRow, index === goals.length - 1 && styles.nativeLastRow]}
+              onPress={() => beginEditGoal(goal)}>
+              <View style={[styles.goalHubDot, { backgroundColor: colors.accent }]} />
+              <View style={styles.nativeGoalCopy}>
+                <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
+                <Text style={styles.nativeGoalCategory}>
+                  {goal.reminder?.enabled
+                    ? `Alarm ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
+                    : 'No alarm'}
+                </Text>
+              </View>
+              <Text style={styles.settingsArrow}>›</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.goalSettingsContent}>
-        <Text style={styles.settingsSectionLabel}>DAILY GOALS</Text>
-        <View style={styles.goalEditorList}>
-          {draftGoals.map((goal, index) => (
-            <View
-              key={goal.id}
-              style={[styles.goalEditorRow, index === draftGoals.length - 1 && styles.nativeLastRow]}>
-              <View style={styles.goalEditorTop}>
-                <Text style={styles.goalFieldLabel}>Activity</Text>
+      <Text style={styles.goalHubSection}>Current weekly goals</Text>
+      <View style={styles.nativeList}>
+        {weeklyGoals.map((goal, index) => (
+          <View
+            key={goal.id}
+            style={[styles.targetRow, index === weeklyGoals.length - 1 && styles.nativeLastRow]}>
+            <View style={styles.nativeGoalCopy}>
+              <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
+              <Text style={styles.nativeGoalCategory}>{goal.target} {goal.unit} per week</Text>
+            </View>
+            <View style={styles.stepper}>
+              <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, -1)}>
+                <SymbolView name={{ ios: 'minus', android: 'remove', web: 'remove' }} size={14} tintColor={C.coral} />
+              </Pressable>
+              <Text style={styles.stepperValue}>{goal.target}</Text>
+              <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, 1)}>
+                <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={C.coral} />
+              </Pressable>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {!!availableIdeas.length && (
+        <>
+          <Text style={styles.goalHubSection}>Weekly goal ideas</Text>
+          <View style={styles.weeklyIdeas}>
+            {availableIdeas.map((idea) => {
+              const colors = categoryColors[idea.category];
+              return (
                 <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${goal.title || 'goal'}`}
-                  hitSlop={10}
-                  onPress={() =>
-                    setDraftGoals((current) => current.filter((item) => item.id !== goal.id))
-                  }>
+                  key={idea.id}
+                  style={[styles.weeklyIdea, { backgroundColor: colors.tint }]}
+                  onPress={() => addWeeklyGoal(idea)}>
+                  <View style={styles.weeklyIdeaCopy}>
+                    <Text style={[styles.weeklyIdeaTitle, { color: colors.accent }]}>{idea.title}</Text>
+                    <Text style={styles.weeklyIdeaMeta}>{idea.target} {idea.unit} per week</Text>
+                  </View>
                   <SymbolView
-                    name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                    size={18}
-                    tintColor={C.muted}
+                    name={{ ios: 'plus.circle.fill', android: 'add_circle', web: 'add_circle' }}
+                    size={24}
+                    tintColor={colors.accent}
                   />
                 </Pressable>
-              </View>
-              <TextInput
-                value={goal.title}
-                onChangeText={(title) => updateGoal(goal.id, { title })}
-                placeholder="30 minute walk"
-                placeholderTextColor={C.sage}
-                style={styles.goalEditorInput}
-                returnKeyType="next"
-              />
-              <Text style={styles.goalFieldLabel}>Additional goal <Text style={styles.goalFieldOptional}>Optional</Text></Text>
-              <TextInput
-                value={goal.detail}
-                onChangeText={(detail) => updateGoal(goal.id, { detail })}
-                placeholder="3 min fast walk, 5 min rest"
-                placeholderTextColor={C.sage}
-                style={styles.goalDetailInput}
-                returnKeyType="done"
-              />
-              <Text style={styles.goalFieldLabel}>Type</Text>
-              <View style={styles.categoryPicker}>
-                {categories.map((category) => (
-                  <Pressable
-                    key={category}
-                    style={[
-                      styles.categoryChoice,
-                      {
-                        backgroundColor:
-                          goal.category === category
-                            ? categoryColors[category].accent
-                            : categoryColors[category].tint,
-                      },
-                    ]}
-                    onPress={() => updateGoal(goal.id, { category })}>
-                    <Text
-                      style={[
-                        styles.categoryChoiceText,
-                        {
-                          color:
-                            goal.category === category
-                              ? C.white
-                              : categoryColors[category].accent,
-                        },
-                      ]}>
-                      {category[0] + category.slice(1).toLowerCase()}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              <View style={styles.goalReminderRow}>
-                <View style={styles.goalReminderLabel}>
-                  <SymbolView
-                    name={{ ios: 'bell', android: 'notifications', web: 'notifications' }}
-                    size={17}
-                    tintColor={C.muted}
-                  />
-                  <View>
-                    <Text style={styles.goalReminderText}>Alarm</Text>
-                    <Text style={styles.goalReminderHint}>Optional · set a time to do it</Text>
-                  </View>
-                </View>
-                <View style={styles.goalReminderControls}>
-                  {goal.reminder?.enabled && (
-                    <DateTimePicker
-                      value={timeAsDate(goal.reminder)}
-                      mode="time"
-                      display={Platform.OS === 'ios' ? 'compact' : 'default'}
-                      onValueChange={(_event, date) => {
-                        updateGoal(goal.id, {
-                          reminder: {
-                            ...goal.reminder!,
-                            hour: date.getHours(),
-                            minute: date.getMinutes(),
-                            notificationId: undefined,
-                          },
-                        });
-                      }}
-                      accentColor={C.coral}
-                    />
-                  )}
-                  <Switch
-                    value={goal.reminder?.enabled ?? false}
-                    onValueChange={(enabled) =>
-                      updateGoal(goal.id, {
-                        reminder: {
-                          enabled,
-                          hour: goal.reminder?.hour ?? 9,
-                          minute: goal.reminder?.minute ?? 0,
-                          notificationId: goal.reminder?.notificationId,
-                        },
-                      })
-                    }
-                    trackColor={{ false: '#D1D1D6', true: '#9A9CF5' }}
-                    thumbColor={C.white}
-                  />
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          disabled={draftGoals.length >= 5}
-          style={[styles.addGoalButton, draftGoals.length >= 5 && styles.disabled]}
-          onPress={addGoal}>
-          <SymbolView
-            name={{ ios: 'plus.circle.fill', android: 'add_circle', web: 'add_circle' }}
-            size={20}
-            tintColor={C.coral}
-          />
-          <Text style={styles.addGoalText}>Add daily goal</Text>
-        </Pressable>
-
-        <Text style={styles.settingsSectionLabel}>WEEKLY TARGETS</Text>
-        <View style={styles.targetList}>
-          <TargetStepper
-            title="Exercise"
-            suffix="times"
-            value={draftWeekly.exerciseTarget}
-            onDecrease={() => changeTarget('exerciseTarget', -1)}
-            onIncrease={() => changeTarget('exerciseTarget', 1)}
-          />
-          <TargetStepper
-            title="Balanced meals"
-            suffix="meals"
-            value={draftWeekly.mealTarget}
-            onDecrease={() => changeTarget('mealTarget', -1)}
-            onIncrease={() => changeTarget('mealTarget', 1)}
-            last
-          />
-        </View>
-        <Text style={styles.goalSettingsNote}>
-          Keep it simple. Daily goals reset each day; weekly targets reset every Monday.
-        </Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
-
-function TargetStepper({
-  title,
-  suffix,
-  value,
-  onDecrease,
-  onIncrease,
-  last = false,
-}: {
-  title: string;
-  suffix: string;
-  value: number;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  last?: boolean;
-}) {
-  return (
-    <View style={[styles.targetRow, last && styles.nativeLastRow]}>
-      <View style={styles.nativeGoalCopy}>
-        <Text style={styles.nativeGoalTitle}>{title}</Text>
-        <Text style={styles.nativeGoalCategory}>{value} {suffix} per week</Text>
-      </View>
-      <View style={styles.stepper}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${title}`} style={styles.stepperButton} onPress={onDecrease}>
-          <SymbolView name={{ ios: 'minus', android: 'remove', web: 'remove' }} size={14} tintColor={C.coral} />
-        </Pressable>
-        <Text style={styles.stepperValue}>{value}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${title}`} style={styles.stepperButton} onPress={onIncrease}>
-          <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={C.coral} />
-        </Pressable>
-      </View>
-    </View>
+              );
+            })}
+          </View>
+        </>
+      )}
+    </ScrollView>
   );
 }
 
@@ -1604,6 +1572,25 @@ const styles = StyleSheet.create({
   settingsNavTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
   settingsNavAction: { color: C.coral, fontSize: 16 },
   settingsSave: { fontWeight: '700' },
+  singleGoalContent: { paddingHorizontal: 16, paddingTop: 28, paddingBottom: 40 },
+  singleGoalCard: { backgroundColor: C.paper, borderRadius: 12, paddingHorizontal: 16, marginBottom: 28, overflow: 'hidden' },
+  singleGoalInput: { minHeight: 56, color: C.inkDark, fontSize: 17 },
+  simpleAlarmRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  deleteGoalButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper, borderRadius: 12 },
+  deleteGoalText: { color: '#D23B3B', fontSize: 15, fontWeight: '600' },
+  goalHubContent: { paddingHorizontal: 16, paddingTop: 24, paddingBottom: 40 },
+  goalHubTitle: { color: C.inkDark, fontSize: 34, lineHeight: 39, fontWeight: '800', letterSpacing: -1, marginBottom: 22 },
+  newGoalButton: { minHeight: 58, borderRadius: 14, backgroundColor: C.coral, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 30 },
+  newGoalIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,.18)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  newGoalText: { color: C.white, fontSize: 17, fontWeight: '700' },
+  goalHubSection: { color: C.inkDark, fontSize: 17, fontWeight: '700', marginLeft: 4, marginBottom: 10 },
+  goalHubRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
+  goalHubDot: { width: 10, height: 10, borderRadius: 5, marginRight: 13 },
+  weeklyIdeas: { gap: 10, marginBottom: 8 },
+  weeklyIdea: { minHeight: 64, borderRadius: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
+  weeklyIdeaCopy: { flex: 1 },
+  weeklyIdeaTitle: { fontSize: 15, fontWeight: '700' },
+  weeklyIdeaMeta: { color: C.muted, fontSize: 12, marginTop: 3 },
   goalSettingsContent: { paddingHorizontal: 16, paddingTop: 26, paddingBottom: 40 },
   settingsSectionLabel: { color: C.muted, fontSize: 12, marginLeft: 16, marginBottom: 8 },
   goalEditorList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, overflow: 'hidden' },

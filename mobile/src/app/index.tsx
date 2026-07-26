@@ -1839,7 +1839,7 @@ function LogScreen({
     if (!result.canceled) setPhoto(result.assets[0].uri);
   }
 
-  const ready = Boolean(photo && mood);
+  const ready = Boolean(mood);
   function share() {
     if (!ready) return;
     const selectedMood = moodOptions.find((option) => option.id === mood);
@@ -1855,6 +1855,8 @@ function LogScreen({
       category: activeGoal.category,
       caption: selectedMood.caption,
       image: photo ?? undefined,
+      photoColor: photo ? undefined : C.focusTint,
+      photoEmoji: photo ? undefined : selectedMood.face,
       time: 'Just now',
       duration: 'Completed today',
       reactions: { heart: 0, kudos: 0 },
@@ -1884,11 +1886,11 @@ function LogScreen({
             <View style={styles.cameraCircle}>
               <SymbolView name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} size={28} tintColor={C.ink} />
             </View>
-            <Text style={styles.photoTitle}>Take your completion selfie</Text>
-            <Text style={styles.photoHint}>One tap. Your face is the proof.</Text>
+            <Text style={styles.photoTitle}>Add a selfie</Text>
+            <Text style={styles.photoHint}>Optional. Complete the check-in without one if you prefer.</Text>
             <View style={styles.photoActions}>
               <Pressable style={styles.cameraButton} onPress={takeSelfie}>
-                <Text style={styles.cameraButtonText}>Take selfie</Text>
+                <Text style={styles.cameraButtonText}>Take optional selfie</Text>
               </Pressable>
             </View>
           </View>
@@ -1917,7 +1919,9 @@ function LogScreen({
           <Text style={styles.shareChoiceTitle}>Share with friends</Text>
           <Text style={styles.shareChoiceText}>
             {shareWithFriends
-              ? 'Friends can see this selfie and send encouragement.'
+              ? photo
+                ? 'Friends can see this selfie and send encouragement.'
+                : 'Friends will see a simple completion update without a photo.'
               : 'Only you will see this completion in your history.'}
           </Text>
         </View>

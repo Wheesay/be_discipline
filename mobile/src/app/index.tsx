@@ -33,15 +33,27 @@ Notifications.setNotificationHandler({
 const C = {
   ink: '#1C1C1E',
   inkDark: '#111111',
-  cream: '#F2F2F7',
+  cream: '#F6F6FA',
   paper: '#FFFFFF',
-  coral: '#3478F6',
+  coral: '#5B5FEF',
   sage: '#AEAEB2',
   muted: '#6E6E73',
   line: '#D1D1D6',
   white: '#FFFFFF',
-  blush: '#EAF2FF',
+  blush: '#ECECFF',
+  move: '#15966A',
+  moveTint: '#E2F5ED',
+  fuel: '#E87524',
+  fuelTint: '#FFF0E4',
+  focus: '#7857E8',
+  focusTint: '#EEE9FF',
 };
+
+const categoryColors = {
+  MOVE: { accent: C.move, tint: C.moveTint },
+  FUEL: { accent: C.fuel, tint: C.fuelTint },
+  FOCUS: { accent: C.focus, tint: C.focusTint },
+} as const;
 
 type Tab = 'today' | 'feed' | 'log' | 'friends' | 'profile' | 'reminders' | 'goal-settings';
 type Reaction = 'heart' | 'kudos';
@@ -439,45 +451,57 @@ function TodayScreen({
       </View>
 
       <View style={styles.nativeList}>
-        {goals.map((goal, index) => (
-          <View
-            key={goal.id}
-            style={[styles.nativeGoalRow, index === goals.length - 1 && styles.nativeLastRow]}>
-            <View style={[styles.nativeStatusCircle, goal.done && styles.nativeStatusCircleDone]}>
-              {goal.done && (
-                <SymbolView
-                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
-                  size={12}
-                  tintColor={C.white}
-                />
+        {goals.map((goal, index) => {
+          const colors = categoryColors[goal.category];
+          return (
+            <View
+              key={goal.id}
+              style={[styles.nativeGoalRow, index === goals.length - 1 && styles.nativeLastRow]}>
+              <View
+                style={[
+                  styles.nativeStatusCircle,
+                  { borderColor: colors.accent },
+                  goal.done && { backgroundColor: colors.accent },
+                ]}>
+                {goal.done && (
+                  <SymbolView
+                    name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                    size={12}
+                    tintColor={C.white}
+                  />
+                )}
+              </View>
+              <View style={styles.nativeGoalCopy}>
+                <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
+                {!!goal.detail && <Text style={styles.nativeGoalDetail}>{goal.detail}</Text>}
+                <Text style={[styles.nativeGoalCategory, { color: colors.accent }]}>
+                  {goal.category.toLowerCase()}
+                  {goal.reminder?.enabled
+                    ? ` · ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
+                    : ''}
+                </Text>
+              </View>
+              {!goal.done && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`I did ${goal.title}. Take a selfie`}
+                  style={({ pressed }) => [
+                    styles.nativeDoneButton,
+                    { backgroundColor: colors.tint },
+                    pressed && styles.nativePressed,
+                  ]}
+                  onPress={() => onLog(goal)}>
+                  <SymbolView
+                    name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
+                    size={15}
+                    tintColor={colors.accent}
+                  />
+                  <Text style={[styles.nativeDoneText, { color: colors.accent }]}>Done</Text>
+                </Pressable>
               )}
             </View>
-            <View style={styles.nativeGoalCopy}>
-              <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
-              {!!goal.detail && <Text style={styles.nativeGoalDetail}>{goal.detail}</Text>}
-              <Text style={styles.nativeGoalCategory}>
-                {goal.category.toLowerCase()}
-                {goal.reminder?.enabled
-                  ? ` · ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
-                  : ''}
-              </Text>
-            </View>
-            {!goal.done && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`I did ${goal.title}. Take a selfie`}
-                style={({ pressed }) => [styles.nativeDoneButton, pressed && styles.nativePressed]}
-                onPress={() => onLog(goal)}>
-                <SymbolView
-                  name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
-                  size={15}
-                  tintColor={C.coral}
-                />
-                <Text style={styles.nativeDoneText}>Done</Text>
-              </Pressable>
-            )}
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       <View style={styles.nativeSectionHeader}>
@@ -485,26 +509,26 @@ function TodayScreen({
       </View>
       <View style={styles.nativeList}>
         <View style={styles.nativeWeekRow}>
-          <View style={styles.nativeWeekIcon}>
-            <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} size={18} tintColor={C.ink} />
+          <View style={[styles.nativeWeekIcon, { backgroundColor: C.moveTint }]}>
+            <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} size={18} tintColor={C.move} />
           </View>
           <View style={styles.nativeGoalCopy}>
             <Text style={styles.nativeGoalTitle}>Exercise</Text>
             <Text style={styles.nativeGoalCategory}>3 of {weeklyGoals.exerciseTarget} times</Text>
           </View>
-          <Text style={styles.nativeWeekCount}>
+          <Text style={[styles.nativeWeekCount, { color: C.move }]}>
             {Math.min(100, Math.round((3 / weeklyGoals.exerciseTarget) * 100))}%
           </Text>
         </View>
         <View style={[styles.nativeWeekRow, styles.nativeLastRow]}>
-          <View style={styles.nativeWeekIcon}>
-            <SymbolView name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} size={18} tintColor={C.ink} />
+          <View style={[styles.nativeWeekIcon, { backgroundColor: C.fuelTint }]}>
+            <SymbolView name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} size={18} tintColor={C.fuel} />
           </View>
           <View style={styles.nativeGoalCopy}>
             <Text style={styles.nativeGoalTitle}>Balanced meals</Text>
             <Text style={styles.nativeGoalCategory}>2 of {weeklyGoals.mealTarget} meals</Text>
           </View>
-          <Text style={styles.nativeWeekCount}>
+          <Text style={[styles.nativeWeekCount, { color: C.fuel }]}>
             {Math.min(100, Math.round((2 / weeklyGoals.mealTarget) * 100))}%
           </Text>
         </View>
@@ -689,12 +713,25 @@ function GoalSettingsScreen({
                 {categories.map((category) => (
                   <Pressable
                     key={category}
-                    style={[styles.categoryChoice, goal.category === category && styles.categoryChoiceActive]}
+                    style={[
+                      styles.categoryChoice,
+                      {
+                        backgroundColor:
+                          goal.category === category
+                            ? categoryColors[category].accent
+                            : categoryColors[category].tint,
+                      },
+                    ]}
                     onPress={() => updateGoal(goal.id, { category })}>
                     <Text
                       style={[
                         styles.categoryChoiceText,
-                        goal.category === category && styles.categoryChoiceTextActive,
+                        {
+                          color:
+                            goal.category === category
+                              ? C.white
+                              : categoryColors[category].accent,
+                        },
                       ]}>
                       {category[0] + category.slice(1).toLowerCase()}
                     </Text>
@@ -744,7 +781,7 @@ function GoalSettingsScreen({
                         },
                       })
                     }
-                    trackColor={{ false: '#D1D1D6', true: '#8EB5FA' }}
+                    trackColor={{ false: '#D1D1D6', true: '#9A9CF5' }}
                     thumbColor={C.white}
                   />
                 </View>
@@ -1480,7 +1517,7 @@ function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }
           (item.id === 'today' && tab === 'log');
         return (
           <Pressable key={item.id} style={styles.navItem} onPress={() => onChange(item.id)}>
-            <SymbolView name={item.symbol} size={22} tintColor={active ? C.ink : C.muted} />
+            <SymbolView name={item.symbol} size={22} tintColor={active ? C.coral : C.muted} />
             <Text style={[styles.navLabel, active && styles.navActive]}>{item.label}</Text>
           </Pressable>
         );
@@ -1537,8 +1574,8 @@ const styles = StyleSheet.create({
   nativeTodayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 },
   nativeTodayTitle: { color: C.inkDark, fontSize: 34, lineHeight: 39, fontWeight: '800', letterSpacing: -1 },
   nativeTodayDate: { color: C.muted, fontSize: 13, marginTop: 3 },
-  nativeAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#E5E5EA', alignItems: 'center', justifyContent: 'center' },
-  nativeAvatarText: { color: C.ink, fontSize: 12, fontWeight: '700' },
+  nativeAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.focusTint, alignItems: 'center', justifyContent: 'center' },
+  nativeAvatarText: { color: C.focus, fontSize: 12, fontWeight: '700' },
   nativeSectionHeader: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   nativeSectionTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
   nativeSectionActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
@@ -1560,7 +1597,7 @@ const styles = StyleSheet.create({
   nativeDoneText: { color: C.coral, fontSize: 13, fontWeight: '600' },
   nativePressed: { opacity: 0.55 },
   nativeWeekRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
-  nativeWeekIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#E5E5EA', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  nativeWeekIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   nativeWeekCount: { color: C.muted, fontSize: 13, fontWeight: '600' },
   goalSettingsScreen: { flex: 1, backgroundColor: C.cream },
   settingsNav: { height: 52, backgroundColor: C.paper, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1598,7 +1635,7 @@ const styles = StyleSheet.create({
   communityTab: { flex: 1, minHeight: 32, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   communityTabActive: { backgroundColor: C.paper },
   communityTabText: { color: C.muted, fontSize: 13, fontWeight: '600' },
-  communityTabTextActive: { color: C.inkDark },
+  communityTabTextActive: { color: C.coral },
   todayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
   todayDate: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
   todayTitle: { color: C.inkDark, fontSize: 34, fontWeight: '800', letterSpacing: -1.1 },
@@ -1796,7 +1833,7 @@ const styles = StyleSheet.create({
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   navIcon: { color: C.muted, fontSize: 19, fontWeight: '700' },
   navLabel: { color: C.muted, fontSize: 10, fontWeight: '500' },
-  navActive: { color: C.ink, fontWeight: '600' },
+  navActive: { color: C.coral, fontWeight: '600' },
   logNav: { width: 42, height: 42, marginTop: -22, borderRadius: 21, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', borderWidth: 4, borderColor: C.paper },
   logNavActive: { backgroundColor: C.coral },
   logNavIcon: { color: C.white, fontSize: 25, lineHeight: 27 },

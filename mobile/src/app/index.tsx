@@ -42,7 +42,7 @@ const C = {
   blush: '#EAF2FF',
 };
 
-type Tab = 'today' | 'feed' | 'log' | 'friends' | 'profile' | 'reminders';
+type Tab = 'today' | 'feed' | 'log' | 'friends' | 'profile' | 'reminders' | 'goal-settings';
 type Reaction = 'heart' | 'kudos';
 
 type User = {
@@ -56,6 +56,11 @@ type Goal = {
   detail: string;
   category: 'MOVE' | 'FUEL' | 'FOCUS';
   done: boolean;
+};
+
+type WeeklyGoals = {
+  exerciseTarget: number;
+  mealTarget: number;
 };
 
 type Friend = {
@@ -91,6 +96,11 @@ const starterGoals: Goal[] = [
   { id: 'g2', title: 'Cook a balanced dinner', detail: 'Protein + greens', category: 'FUEL', done: false },
   { id: 'g3', title: 'Evening walk', detail: '30 min · Phone stays home', category: 'FOCUS', done: false },
 ];
+
+const starterWeeklyGoals: WeeklyGoals = {
+  exerciseTarget: 4,
+  mealTarget: 5,
+};
 
 const people: Friend[] = [
   { id: 'f1', name: 'Maya Koh', username: '@mayamoves', initials: 'MK', color: '#DF8168', mutual: 6, added: true },
@@ -155,6 +165,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('today');
   const [goals, setGoals] = useState(starterGoals);
+  const [weeklyGoals, setWeeklyGoals] = useState(starterWeeklyGoals);
   const [friends, setFriends] = useState(people);
   const [posts, setPosts] = useState(starterPosts);
   const [reacted, setReacted] = useState<Record<string, Reaction[]>>({});
@@ -167,6 +178,7 @@ export default function App() {
         const state = JSON.parse(value);
         setUser(state.user ?? null);
         setGoals(state.goals ?? starterGoals);
+        setWeeklyGoals(state.weeklyGoals ?? starterWeeklyGoals);
         setFriends(state.friends ?? people);
         setPosts(state.posts ?? starterPosts);
         setReacted(state.reacted ?? {});
@@ -178,9 +190,9 @@ export default function App() {
     if (loading) return;
     AsyncStorage.setItem(
       storageKey,
-      JSON.stringify({ user, goals, friends, posts, reacted }),
+      JSON.stringify({ user, goals, weeklyGoals, friends, posts, reacted }),
     );
-  }, [loading, user, goals, friends, posts, reacted]);
+  }, [loading, user, goals, weeklyGoals, friends, posts, reacted]);
 
   function openLog(goal?: Goal) {
     setLogGoal(goal ?? null);
@@ -238,7 +250,15 @@ export default function App() {
   return (
     <SafeAreaView style={styles.app} edges={['top']}>
       <View style={styles.screen}>
-        {tab === 'today' && <TodayScreen user={user} goals={goals} onLog={openLog} />}
+        {tab === 'today' && (
+          <TodayScreen
+            user={user}
+            goals={goals}
+            weeklyGoals={weeklyGoals}
+            onLog={openLog}
+            onEditGoals={() => setTab('goal-settings')}
+          />
+        )}
         {tab === 'feed' && <FeedScreen posts={posts} reacted={reacted} onReact={react} />}
         {tab === 'log' && (
           <LogScreen user={user} selectedGoal={logGoal} goals={goals} onPublish={publishPost} />
@@ -254,6 +274,18 @@ export default function App() {
           />
         )}
         {tab === 'reminders' && <RemindersScreen onBack={() => setTab('profile')} />}
+        {tab === 'goal-settings' && (
+          <GoalSettingsScreen
+            goals={goals}
+            weeklyGoals={weeklyGoals}
+            onCancel={() => setTab('today')}
+            onSave={(nextGoals, nextWeeklyGoals) => {
+              setGoals(nextGoals);
+              setWeeklyGoals(nextWeeklyGoals);
+              setTab('today');
+            }}
+          />
+        )}
       </View>
       <BottomNav tab={tab} onChange={(next) => { setLogGoal(null); setTab(next); }} />
     </SafeAreaView>
@@ -358,11 +390,15 @@ function Header({ label, title, action }: { label: string; title: string; action
 function TodayScreen({
   user,
   goals,
+  weeklyGoals,
   onLog,
+  onEditGoals,
 }: {
   user: User;
   goals: Goal[];
+  weeklyGoals: WeeklyGoals;
   onLog: (goal: Goal) => void;
+  onEditGoals: () => void;
 }) {
   const completed = goals.filter((goal) => goal.done).length;
   const progress = `${(completed / goals.length) * 100}%` as `${number}%`;
@@ -383,7 +419,12 @@ function TodayScreen({
 
       <View style={styles.nativeSectionHeader}>
         <Text style={styles.nativeSectionTitle}>Daily goals</Text>
-        <Text style={styles.nativeSectionMeta}>{completed} of {goals.length}</Text>
+        <View style={styles.nativeSectionActions}>
+          <Text style={styles.nativeSectionMeta}>{completed} of {goals.length}</Text>
+          <Pressable accessibilityRole="button" onPress={onEditGoals}>
+            <Text style={styles.nativeEditText}>Edit</Text>
+          </Pressable>
+        </View>
       </View>
       <View style={styles.nativeProgressTrack}>
         <View style={[styles.nativeProgressFill, { width: progress }]} />
@@ -435,9 +476,11 @@ function TodayScreen({
           </View>
           <View style={styles.nativeGoalCopy}>
             <Text style={styles.nativeGoalTitle}>Exercise</Text>
-            <Text style={styles.nativeGoalCategory}>3 of 4 times</Text>
+            <Text style={styles.nativeGoalCategory}>3 of {weeklyGoals.exerciseTarget} times</Text>
           </View>
-          <Text style={styles.nativeWeekCount}>75%</Text>
+          <Text style={styles.nativeWeekCount}>
+            {Math.min(100, Math.round((3 / weeklyGoals.exerciseTarget) * 100))}%
+          </Text>
         </View>
         <View style={[styles.nativeWeekRow, styles.nativeLastRow]}>
           <View style={styles.nativeWeekIcon}>
@@ -445,12 +488,205 @@ function TodayScreen({
           </View>
           <View style={styles.nativeGoalCopy}>
             <Text style={styles.nativeGoalTitle}>Balanced meals</Text>
-            <Text style={styles.nativeGoalCategory}>2 of 5 meals</Text>
+            <Text style={styles.nativeGoalCategory}>2 of {weeklyGoals.mealTarget} meals</Text>
           </View>
-          <Text style={styles.nativeWeekCount}>40%</Text>
+          <Text style={styles.nativeWeekCount}>
+            {Math.min(100, Math.round((2 / weeklyGoals.mealTarget) * 100))}%
+          </Text>
         </View>
       </View>
     </ScrollView>
+  );
+}
+
+function GoalSettingsScreen({
+  goals,
+  weeklyGoals,
+  onCancel,
+  onSave,
+}: {
+  goals: Goal[];
+  weeklyGoals: WeeklyGoals;
+  onCancel: () => void;
+  onSave: (goals: Goal[], weeklyGoals: WeeklyGoals) => void;
+}) {
+  const [draftGoals, setDraftGoals] = useState(goals);
+  const [draftWeekly, setDraftWeekly] = useState(weeklyGoals);
+  const categories: Goal['category'][] = ['MOVE', 'FUEL', 'FOCUS'];
+  const validGoals = draftGoals.filter((goal) => goal.title.trim());
+
+  function updateGoal(id: string, update: Partial<Goal>) {
+    setDraftGoals((current) =>
+      current.map((goal) => (goal.id === id ? { ...goal, ...update } : goal)),
+    );
+  }
+
+  function addGoal() {
+    setDraftGoals((current) => [
+      ...current,
+      {
+        id: `goal-${Date.now()}`,
+        title: '',
+        detail: '',
+        category: 'FOCUS',
+        done: false,
+      },
+    ]);
+  }
+
+  function changeTarget(key: keyof WeeklyGoals, amount: number) {
+    setDraftWeekly((current) => ({
+      ...current,
+      [key]: Math.max(1, Math.min(key === 'mealTarget' ? 14 : 7, current[key] + amount)),
+    }));
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.goalSettingsScreen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.settingsNav}>
+        <Pressable accessibilityRole="button" onPress={onCancel}>
+          <Text style={styles.settingsNavAction}>Cancel</Text>
+        </Pressable>
+        <Text style={styles.settingsNavTitle}>Goals</Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={!validGoals.length}
+          onPress={() =>
+            onSave(
+              validGoals.map((goal) => ({ ...goal, title: goal.title.trim(), detail: '' })),
+              draftWeekly,
+            )
+          }>
+          <Text style={[styles.settingsNavAction, styles.settingsSave, !validGoals.length && styles.disabled]}>
+            Save
+          </Text>
+        </Pressable>
+      </View>
+
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.goalSettingsContent}>
+        <Text style={styles.settingsSectionLabel}>DAILY GOALS</Text>
+        <View style={styles.goalEditorList}>
+          {draftGoals.map((goal, index) => (
+            <View
+              key={goal.id}
+              style={[styles.goalEditorRow, index === draftGoals.length - 1 && styles.nativeLastRow]}>
+              <View style={styles.goalEditorTop}>
+                <TextInput
+                  value={goal.title}
+                  onChangeText={(title) => updateGoal(goal.id, { title })}
+                  placeholder="Goal name"
+                  placeholderTextColor={C.sage}
+                  style={styles.goalEditorInput}
+                  returnKeyType="done"
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${goal.title || 'goal'}`}
+                  hitSlop={10}
+                  onPress={() =>
+                    setDraftGoals((current) => current.filter((item) => item.id !== goal.id))
+                  }>
+                  <SymbolView
+                    name={{ ios: 'trash', android: 'delete', web: 'delete' }}
+                    size={18}
+                    tintColor={C.muted}
+                  />
+                </Pressable>
+              </View>
+              <View style={styles.categoryPicker}>
+                {categories.map((category) => (
+                  <Pressable
+                    key={category}
+                    style={[styles.categoryChoice, goal.category === category && styles.categoryChoiceActive]}
+                    onPress={() => updateGoal(goal.id, { category })}>
+                    <Text
+                      style={[
+                        styles.categoryChoiceText,
+                        goal.category === category && styles.categoryChoiceTextActive,
+                      ]}>
+                      {category[0] + category.slice(1).toLowerCase()}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          disabled={draftGoals.length >= 5}
+          style={[styles.addGoalButton, draftGoals.length >= 5 && styles.disabled]}
+          onPress={addGoal}>
+          <SymbolView
+            name={{ ios: 'plus.circle.fill', android: 'add_circle', web: 'add_circle' }}
+            size={20}
+            tintColor={C.coral}
+          />
+          <Text style={styles.addGoalText}>Add daily goal</Text>
+        </Pressable>
+
+        <Text style={styles.settingsSectionLabel}>WEEKLY TARGETS</Text>
+        <View style={styles.targetList}>
+          <TargetStepper
+            title="Exercise"
+            suffix="times"
+            value={draftWeekly.exerciseTarget}
+            onDecrease={() => changeTarget('exerciseTarget', -1)}
+            onIncrease={() => changeTarget('exerciseTarget', 1)}
+          />
+          <TargetStepper
+            title="Balanced meals"
+            suffix="meals"
+            value={draftWeekly.mealTarget}
+            onDecrease={() => changeTarget('mealTarget', -1)}
+            onIncrease={() => changeTarget('mealTarget', 1)}
+            last
+          />
+        </View>
+        <Text style={styles.goalSettingsNote}>
+          Keep it simple. Daily goals reset each day; weekly targets reset every Monday.
+        </Text>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function TargetStepper({
+  title,
+  suffix,
+  value,
+  onDecrease,
+  onIncrease,
+  last = false,
+}: {
+  title: string;
+  suffix: string;
+  value: number;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  last?: boolean;
+}) {
+  return (
+    <View style={[styles.targetRow, last && styles.nativeLastRow]}>
+      <View style={styles.nativeGoalCopy}>
+        <Text style={styles.nativeGoalTitle}>{title}</Text>
+        <Text style={styles.nativeGoalCategory}>{value} {suffix} per week</Text>
+      </View>
+      <View style={styles.stepper}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${title}`} style={styles.stepperButton} onPress={onDecrease}>
+          <SymbolView name={{ ios: 'minus', android: 'remove', web: 'remove' }} size={14} tintColor={C.coral} />
+        </Pressable>
+        <Text style={styles.stepperValue}>{value}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${title}`} style={styles.stepperButton} onPress={onIncrease}>
+          <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={C.coral} />
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -1038,7 +1274,10 @@ function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }
   return (
     <View style={styles.bottomNav}>
       {items.map((item) => {
-        const active = tab === item.id || (item.id === 'profile' && tab === 'reminders');
+        const active =
+          tab === item.id ||
+          (item.id === 'profile' && tab === 'reminders') ||
+          (item.id === 'today' && tab === 'goal-settings');
         return (
           <Pressable key={item.id} style={styles.navItem} onPress={() => onChange(item.id)}>
             <SymbolView name={item.symbol} size={22} tintColor={active ? C.ink : C.muted} />
@@ -1102,7 +1341,9 @@ const styles = StyleSheet.create({
   nativeAvatarText: { color: C.ink, fontSize: 12, fontWeight: '700' },
   nativeSectionHeader: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   nativeSectionTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
+  nativeSectionActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   nativeSectionMeta: { color: C.muted, fontSize: 13 },
+  nativeEditText: { color: C.coral, fontSize: 14, fontWeight: '600' },
   nativeProgressTrack: { height: 4, backgroundColor: '#DCDCE1', borderRadius: 2, marginHorizontal: 4, marginTop: 8, marginBottom: 14, overflow: 'hidden' },
   nativeProgressFill: { height: '100%', backgroundColor: C.coral, borderRadius: 2 },
   nativeList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, marginBottom: 30, overflow: 'hidden' },
@@ -1120,6 +1361,30 @@ const styles = StyleSheet.create({
   nativeWeekRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
   nativeWeekIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#E5E5EA', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   nativeWeekCount: { color: C.muted, fontSize: 13, fontWeight: '600' },
+  goalSettingsScreen: { flex: 1, backgroundColor: C.cream },
+  settingsNav: { height: 52, backgroundColor: C.paper, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  settingsNavTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
+  settingsNavAction: { color: C.coral, fontSize: 16 },
+  settingsSave: { fontWeight: '700' },
+  goalSettingsContent: { paddingHorizontal: 16, paddingTop: 26, paddingBottom: 40 },
+  settingsSectionLabel: { color: C.muted, fontSize: 12, marginLeft: 16, marginBottom: 8 },
+  goalEditorList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, overflow: 'hidden' },
+  goalEditorRow: { paddingVertical: 13, paddingRight: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  goalEditorTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  goalEditorInput: { flex: 1, minHeight: 34, color: C.inkDark, fontSize: 16, fontWeight: '600', paddingVertical: 0 },
+  categoryPicker: { flexDirection: 'row', gap: 7, marginTop: 10 },
+  categoryChoice: { minHeight: 29, borderRadius: 15, backgroundColor: C.cream, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  categoryChoiceActive: { backgroundColor: C.ink },
+  categoryChoiceText: { color: C.muted, fontSize: 12, fontWeight: '500' },
+  categoryChoiceTextActive: { color: C.white },
+  addGoalButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, marginBottom: 28 },
+  addGoalText: { color: C.coral, fontSize: 15, fontWeight: '600' },
+  targetList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, overflow: 'hidden' },
+  targetRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 12 },
+  stepper: { height: 34, flexDirection: 'row', alignItems: 'center', borderRadius: 8, backgroundColor: C.cream, overflow: 'hidden' },
+  stepperButton: { width: 36, height: 34, alignItems: 'center', justifyContent: 'center' },
+  stepperValue: { minWidth: 26, color: C.inkDark, textAlign: 'center', fontSize: 14, fontWeight: '600' },
+  goalSettingsNote: { color: C.muted, fontSize: 12, lineHeight: 17, marginHorizontal: 16, marginTop: 10 },
   todayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
   todayDate: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
   todayTitle: { color: C.inkDark, fontSize: 34, fontWeight: '800', letterSpacing: -1.1 },

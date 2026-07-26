@@ -14,6 +14,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -56,6 +57,14 @@ type Goal = {
   detail: string;
   category: 'MOVE' | 'FUEL' | 'FOCUS';
   done: boolean;
+  reminder?: GoalReminder;
+};
+
+type GoalReminder = {
+  enabled: boolean;
+  hour: number;
+  minute: number;
+  notificationId?: string;
 };
 
 type WeeklyGoals = {
@@ -256,14 +265,20 @@ export default function App() {
             goals={goals}
             weeklyGoals={weeklyGoals}
             onLog={openLog}
-            onEditGoals={() => setTab('goal-settings')}
           />
         )}
-        {tab === 'feed' && <FeedScreen posts={posts} reacted={reacted} onReact={react} />}
+        {tab === 'feed' && (
+          <CommunityScreen
+            posts={posts}
+            reacted={reacted}
+            onReact={react}
+            friends={friends}
+            setFriends={setFriends}
+          />
+        )}
         {tab === 'log' && (
           <LogScreen user={user} selectedGoal={logGoal} goals={goals} onPublish={publishPost} />
         )}
-        {tab === 'friends' && <FriendsScreen friends={friends} setFriends={setFriends} />}
         {tab === 'profile' && (
           <ProfileScreen
             user={user}
@@ -392,13 +407,11 @@ function TodayScreen({
   goals,
   weeklyGoals,
   onLog,
-  onEditGoals,
 }: {
   user: User;
   goals: Goal[];
   weeklyGoals: WeeklyGoals;
   onLog: (goal: Goal) => void;
-  onEditGoals: () => void;
 }) {
   const completed = goals.filter((goal) => goal.done).length;
   const progress = `${(completed / goals.length) * 100}%` as `${number}%`;
@@ -419,12 +432,7 @@ function TodayScreen({
 
       <View style={styles.nativeSectionHeader}>
         <Text style={styles.nativeSectionTitle}>Daily goals</Text>
-        <View style={styles.nativeSectionActions}>
-          <Text style={styles.nativeSectionMeta}>{completed} of {goals.length}</Text>
-          <Pressable accessibilityRole="button" onPress={onEditGoals}>
-            <Text style={styles.nativeEditText}>Edit</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.nativeSectionMeta}>{completed} of {goals.length}</Text>
       </View>
       <View style={styles.nativeProgressTrack}>
         <View style={[styles.nativeProgressFill, { width: progress }]} />
@@ -446,7 +454,13 @@ function TodayScreen({
             </View>
             <View style={styles.nativeGoalCopy}>
               <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
-              <Text style={styles.nativeGoalCategory}>{goal.category.toLowerCase()}</Text>
+              {!!goal.detail && <Text style={styles.nativeGoalDetail}>{goal.detail}</Text>}
+              <Text style={styles.nativeGoalCategory}>
+                {goal.category.toLowerCase()}
+                {goal.reminder?.enabled
+                  ? ` · ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
+                  : ''}
+              </Text>
             </View>
             {!goal.done && (
               <Pressable
@@ -541,6 +555,73 @@ function GoalSettingsScreen({
     }));
   }
 
+  async function saveSettings() {
+    const originalById = new Map(goals.map((goal) => [goal.id, goal]));
+    const nextGoals = validGoals.map((goal) => ({
+      ...goal,
+      title: goal.title.trim(),
+      detail: goal.detail.trim(),
+    }));
+    const nextIds = new Set(nextGoals.map((goal) => goal.id));
+
+    for (const original of goals) {
+      if (!nextIds.has(original.id) && original.reminder?.notificationId) {
+        await Notifications.cancelScheduledNotificationAsync(original.reminder.notificationId);
+      }
+    }
+
+    let permission: boolean | undefined;
+    let permissionWarningShown = false;
+    const scheduledGoals: Goal[] = [];
+
+    for (const goal of nextGoals) {
+      const original = originalById.get(goal.id);
+      const previousReminder = original?.reminder;
+      const reminder = goal.reminder;
+      const unchanged =
+        reminder?.enabled &&
+        previousReminder?.enabled &&
+        previousReminder.notificationId &&
+        reminder.hour === previousReminder.hour &&
+        reminder.minute === previousReminder.minute;
+
+      if (previousReminder?.notificationId && !unchanged) {
+        await Notifications.cancelScheduledNotificationAsync(previousReminder.notificationId);
+      }
+
+      if (!reminder?.enabled) {
+        scheduledGoals.push({ ...goal, reminder: reminder ? { ...reminder, notificationId: undefined } : undefined });
+        continue;
+      }
+
+      if (unchanged) {
+        scheduledGoals.push({
+          ...goal,
+          reminder: { ...reminder, notificationId: previousReminder.notificationId },
+        });
+        continue;
+      }
+
+      if (permission === undefined) permission = await ensureNotificationPermission();
+      if (!permission) {
+        scheduledGoals.push({ ...goal, reminder: { ...reminder, enabled: false, notificationId: undefined } });
+        if (!permissionWarningShown) {
+          Alert.alert(
+            'Notifications are off',
+            'The goals were saved, but reminders remain off until notifications are allowed in phone settings.',
+          );
+          permissionWarningShown = true;
+        }
+        continue;
+      }
+
+      const notificationId = await scheduleGoalReminder(goal);
+      scheduledGoals.push({ ...goal, reminder: { ...reminder, notificationId } });
+    }
+
+    onSave(scheduledGoals, draftWeekly);
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.goalSettingsScreen}
@@ -553,12 +634,7 @@ function GoalSettingsScreen({
         <Pressable
           accessibilityRole="button"
           disabled={!validGoals.length}
-          onPress={() =>
-            onSave(
-              validGoals.map((goal) => ({ ...goal, title: goal.title.trim(), detail: '' })),
-              draftWeekly,
-            )
-          }>
+          onPress={saveSettings}>
           <Text style={[styles.settingsNavAction, styles.settingsSave, !validGoals.length && styles.disabled]}>
             Save
           </Text>
@@ -576,14 +652,7 @@ function GoalSettingsScreen({
               key={goal.id}
               style={[styles.goalEditorRow, index === draftGoals.length - 1 && styles.nativeLastRow]}>
               <View style={styles.goalEditorTop}>
-                <TextInput
-                  value={goal.title}
-                  onChangeText={(title) => updateGoal(goal.id, { title })}
-                  placeholder="Goal name"
-                  placeholderTextColor={C.sage}
-                  style={styles.goalEditorInput}
-                  returnKeyType="done"
-                />
+                <Text style={styles.goalFieldLabel}>Activity</Text>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove ${goal.title || 'goal'}`}
@@ -598,6 +667,24 @@ function GoalSettingsScreen({
                   />
                 </Pressable>
               </View>
+              <TextInput
+                value={goal.title}
+                onChangeText={(title) => updateGoal(goal.id, { title })}
+                placeholder="30 minute walk"
+                placeholderTextColor={C.sage}
+                style={styles.goalEditorInput}
+                returnKeyType="next"
+              />
+              <Text style={styles.goalFieldLabel}>Additional goal <Text style={styles.goalFieldOptional}>Optional</Text></Text>
+              <TextInput
+                value={goal.detail}
+                onChangeText={(detail) => updateGoal(goal.id, { detail })}
+                placeholder="3 min fast walk, 5 min rest"
+                placeholderTextColor={C.sage}
+                style={styles.goalDetailInput}
+                returnKeyType="done"
+              />
+              <Text style={styles.goalFieldLabel}>Type</Text>
               <View style={styles.categoryPicker}>
                 {categories.map((category) => (
                   <Pressable
@@ -613,6 +700,55 @@ function GoalSettingsScreen({
                     </Text>
                   </Pressable>
                 ))}
+              </View>
+              <View style={styles.goalReminderRow}>
+                <View style={styles.goalReminderLabel}>
+                  <SymbolView
+                    name={{ ios: 'bell', android: 'notifications', web: 'notifications' }}
+                    size={17}
+                    tintColor={C.muted}
+                  />
+                  <View>
+                    <Text style={styles.goalReminderText}>Alarm</Text>
+                    <Text style={styles.goalReminderHint}>Optional · set a time to do it</Text>
+                  </View>
+                </View>
+                <View style={styles.goalReminderControls}>
+                  {goal.reminder?.enabled && (
+                    <DateTimePicker
+                      value={timeAsDate(goal.reminder)}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'compact' : 'default'}
+                      onChange={(event, date) => {
+                        if (event.type === 'dismissed' || !date) return;
+                        updateGoal(goal.id, {
+                          reminder: {
+                            ...goal.reminder!,
+                            hour: date.getHours(),
+                            minute: date.getMinutes(),
+                            notificationId: undefined,
+                          },
+                        });
+                      }}
+                      accentColor={C.coral}
+                    />
+                  )}
+                  <Switch
+                    value={goal.reminder?.enabled ?? false}
+                    onValueChange={(enabled) =>
+                      updateGoal(goal.id, {
+                        reminder: {
+                          enabled,
+                          hour: goal.reminder?.hour ?? 9,
+                          minute: goal.reminder?.minute ?? 0,
+                          notificationId: goal.reminder?.notificationId,
+                        },
+                      })
+                    }
+                    trackColor={{ false: '#D1D1D6', true: '#8EB5FA' }}
+                    thumbColor={C.white}
+                  />
+                </View>
               </View>
             </View>
           ))}
@@ -690,17 +826,60 @@ function TargetStepper({
   );
 }
 
-function FeedScreen({
+function CommunityScreen({
   posts,
   reacted,
   onReact,
+  friends,
+  setFriends,
 }: {
   posts: Post[];
   reacted: Record<string, Reaction[]>;
   onReact: (postId: string, reaction: Reaction) => void;
+  friends: Friend[];
+  setFriends: React.Dispatch<React.SetStateAction<Friend[]>>;
+}) {
+  const [section, setSection] = useState<'activity' | 'people'>('activity');
+  const navigation = (
+    <View style={styles.communityTabs}>
+      <Pressable
+        style={[styles.communityTab, section === 'activity' && styles.communityTabActive]}
+        onPress={() => setSection('activity')}>
+        <Text style={[styles.communityTabText, section === 'activity' && styles.communityTabTextActive]}>
+          Activity
+        </Text>
+      </Pressable>
+      <Pressable
+        style={[styles.communityTab, section === 'people' && styles.communityTabActive]}
+        onPress={() => setSection('people')}>
+        <Text style={[styles.communityTabText, section === 'people' && styles.communityTabTextActive]}>
+          Find friends
+        </Text>
+      </Pressable>
+    </View>
+  );
+
+  return section === 'activity' ? (
+    <FeedScreen posts={posts} reacted={reacted} onReact={onReact} communityNavigation={navigation} />
+  ) : (
+    <FriendsScreen friends={friends} setFriends={setFriends} communityNavigation={navigation} />
+  );
+}
+
+function FeedScreen({
+  posts,
+  reacted,
+  onReact,
+  communityNavigation,
+}: {
+  posts: Post[];
+  reacted: Record<string, Reaction[]>;
+  onReact: (postId: string, reaction: Reaction) => void;
+  communityNavigation?: React.ReactNode;
 }) {
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      {communityNavigation}
       <Header
         label="YOUR COMMUNITY"
         title="Friends showing up."
@@ -885,9 +1064,11 @@ function LogScreen({
 function FriendsScreen({
   friends,
   setFriends,
+  communityNavigation,
 }: {
   friends: Friend[];
   setFriends: React.Dispatch<React.SetStateAction<Friend[]>>;
+  communityNavigation?: React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const filtered = useMemo(
@@ -910,6 +1091,7 @@ function FriendsScreen({
 
   return (
     <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      {communityNavigation}
       <Header label="YOUR PEOPLE" title="Better with friends." />
       <View style={styles.search}>
         <Text style={styles.searchIcon}>⌕</Text>
@@ -1059,6 +1241,21 @@ const defaultReminders: Record<ReminderName, ReminderState> = {
   evening: { enabled: false, hour: 20, minute: 30 },
 };
 
+async function ensureNotificationPermission() {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('discipline-reminders', {
+      name: 'Goal reminders',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 180, 120, 180],
+      lightColor: C.coral,
+    });
+  }
+  const current = await Notifications.getPermissionsAsync();
+  if (current.status === 'granted') return true;
+  const requested = await Notifications.requestPermissionsAsync();
+  return requested.status === 'granted';
+}
+
 function RemindersScreen({ onBack }: { onBack: () => void }) {
   const [reminders, setReminders] = useState(defaultReminders);
   const [editing, setEditing] = useState<ReminderName | null>(null);
@@ -1069,21 +1266,6 @@ function RemindersScreen({ onBack }: { onBack: () => void }) {
       .then((value) => value && setReminders(JSON.parse(value)))
       .finally(() => setReady(true));
   }, []);
-
-  async function ensurePermission() {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('discipline-reminders', {
-        name: 'Daily discipline reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 180, 120, 180],
-        lightColor: C.coral,
-      });
-    }
-    const current = await Notifications.getPermissionsAsync();
-    if (current.status === 'granted') return true;
-    const requested = await Notifications.requestPermissionsAsync();
-    return requested.status === 'granted';
-  }
 
   async function saveReminder(name: ReminderName, next: ReminderState) {
     const updated = { ...reminders, [name]: next };
@@ -1101,7 +1283,7 @@ function RemindersScreen({ onBack }: { onBack: () => void }) {
       return;
     }
 
-    const granted = await ensurePermission();
+    const granted = await ensureNotificationPermission();
     if (!granted) {
       Alert.alert(
         'Notifications are off',
@@ -1251,7 +1433,26 @@ async function scheduleDailyReminder(name: ReminderName, hour: number, minute: n
   });
 }
 
-function timeAsDate(reminder: ReminderState) {
+async function scheduleGoalReminder(goal: Goal) {
+  const reminder = goal.reminder;
+  if (!reminder) throw new Error('Cannot schedule a goal without a reminder time.');
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Time for ${goal.title}`,
+      body: goal.detail || 'You planned this. Start small and show up.',
+      sound: true,
+      data: { screen: 'today', goalId: goal.id },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: reminder.hour,
+      minute: reminder.minute,
+      channelId: 'discipline-reminders',
+    },
+  });
+}
+
+function timeAsDate(reminder: { hour: number; minute: number }) {
   const date = new Date();
   date.setHours(reminder.hour, reminder.minute, 0, 0);
   return date;
@@ -1266,9 +1467,8 @@ function formatTime(hour: number, minute: number) {
 function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
   const items = [
     { id: 'today', symbol: { ios: 'checklist', android: 'checklist', web: 'checklist' }, label: 'Today' },
-    { id: 'feed', symbol: { ios: 'person.2.fill', android: 'groups', web: 'groups' }, label: 'Feed' },
-    { id: 'log', symbol: { ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }, label: 'Proof' },
-    { id: 'friends', symbol: { ios: 'person.badge.plus', android: 'group_add', web: 'group_add' }, label: 'Friends' },
+    { id: 'feed', symbol: { ios: 'person.2.fill', android: 'groups', web: 'groups' }, label: 'Community' },
+    { id: 'goal-settings', symbol: { ios: 'target', android: 'track_changes', web: 'track_changes' }, label: 'Goals' },
     { id: 'profile', symbol: { ios: 'person.crop.circle', android: 'account_circle', web: 'account_circle' }, label: 'Me' },
   ] as const;
   return (
@@ -1277,7 +1477,7 @@ function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }
         const active =
           tab === item.id ||
           (item.id === 'profile' && tab === 'reminders') ||
-          (item.id === 'today' && tab === 'goal-settings');
+          (item.id === 'today' && tab === 'log');
         return (
           <Pressable key={item.id} style={styles.navItem} onPress={() => onChange(item.id)}>
             <SymbolView name={item.symbol} size={22} tintColor={active ? C.ink : C.muted} />
@@ -1354,6 +1554,7 @@ const styles = StyleSheet.create({
   nativeGoalCopy: { flex: 1, paddingVertical: 13 },
   nativeGoalTitle: { color: C.inkDark, fontSize: 15, fontWeight: '600' },
   nativeGoalTitleDone: { color: C.muted, textDecorationLine: 'line-through' },
+  nativeGoalDetail: { color: C.muted, fontSize: 12, lineHeight: 16, marginTop: 3 },
   nativeGoalCategory: { color: C.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' },
   nativeDoneButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.blush, borderRadius: 17, paddingHorizontal: 12 },
   nativeDoneText: { color: C.coral, fontSize: 13, fontWeight: '600' },
@@ -1369,14 +1570,22 @@ const styles = StyleSheet.create({
   goalSettingsContent: { paddingHorizontal: 16, paddingTop: 26, paddingBottom: 40 },
   settingsSectionLabel: { color: C.muted, fontSize: 12, marginLeft: 16, marginBottom: 8 },
   goalEditorList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, overflow: 'hidden' },
-  goalEditorRow: { paddingVertical: 13, paddingRight: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  goalEditorRow: { paddingVertical: 16, paddingRight: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
   goalEditorTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  goalEditorInput: { flex: 1, minHeight: 34, color: C.inkDark, fontSize: 16, fontWeight: '600', paddingVertical: 0 },
+  goalFieldLabel: { flex: 1, color: C.muted, fontSize: 12, fontWeight: '600', marginTop: 12, marginBottom: 5 },
+  goalFieldOptional: { color: C.sage, fontWeight: '400' },
+  goalEditorInput: { minHeight: 40, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, color: C.inkDark, fontSize: 16, fontWeight: '600', paddingVertical: 6 },
+  goalDetailInput: { minHeight: 38, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, color: C.inkDark, fontSize: 14, paddingVertical: 6 },
   categoryPicker: { flexDirection: 'row', gap: 7, marginTop: 10 },
   categoryChoice: { minHeight: 29, borderRadius: 15, backgroundColor: C.cream, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   categoryChoiceActive: { backgroundColor: C.ink },
   categoryChoiceText: { color: C.muted, fontSize: 12, fontWeight: '500' },
   categoryChoiceTextActive: { color: C.white },
+  goalReminderRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  goalReminderLabel: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  goalReminderText: { color: C.inkDark, fontSize: 14, fontWeight: '600' },
+  goalReminderHint: { color: C.muted, fontSize: 10, marginTop: 2 },
+  goalReminderControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   addGoalButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 14, marginBottom: 28 },
   addGoalText: { color: C.coral, fontSize: 15, fontWeight: '600' },
   targetList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, overflow: 'hidden' },
@@ -1385,6 +1594,11 @@ const styles = StyleSheet.create({
   stepperButton: { width: 36, height: 34, alignItems: 'center', justifyContent: 'center' },
   stepperValue: { minWidth: 26, color: C.inkDark, textAlign: 'center', fontSize: 14, fontWeight: '600' },
   goalSettingsNote: { color: C.muted, fontSize: 12, lineHeight: 17, marginHorizontal: 16, marginTop: 10 },
+  communityTabs: { flexDirection: 'row', backgroundColor: '#E5E5EA', borderRadius: 9, padding: 2, marginBottom: 22 },
+  communityTab: { flex: 1, minHeight: 32, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  communityTabActive: { backgroundColor: C.paper },
+  communityTabText: { color: C.muted, fontSize: 13, fontWeight: '600' },
+  communityTabTextActive: { color: C.inkDark },
   todayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
   todayDate: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
   todayTitle: { color: C.inkDark, fontSize: 34, fontWeight: '800', letterSpacing: -1.1 },

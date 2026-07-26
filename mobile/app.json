@@ -34,13 +34,21 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "color": "#EF6A47",
+          "defaultChannel": "discipline-reminders"
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#173F35",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

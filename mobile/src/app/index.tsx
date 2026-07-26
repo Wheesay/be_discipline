@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,6 +19,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
 const C = {
   ink: '#173F35',
   inkDark: '#102C25',
@@ -30,7 +41,7 @@ const C = {
   blush: '#F7DED5',
 };
 
-type Tab = 'today' | 'feed' | 'log' | 'friends' | 'profile';
+type Tab = 'today' | 'feed' | 'log' | 'friends' | 'profile' | 'reminders';
 type Reaction = 'heart' | 'kudos';
 
 type User = {
@@ -233,8 +244,15 @@ export default function App() {
         )}
         {tab === 'friends' && <FriendsScreen friends={friends} setFriends={setFriends} />}
         {tab === 'profile' && (
-          <ProfileScreen user={user} goals={goals} posts={posts} friends={friends} />
+          <ProfileScreen
+            user={user}
+            goals={goals}
+            posts={posts}
+            friends={friends}
+            onOpenReminders={() => setTab('reminders')}
+          />
         )}
+        {tab === 'reminders' && <RemindersScreen onBack={() => setTab('profile')} />}
       </View>
       <BottomNav tab={tab} onChange={(next) => { setLogGoal(null); setTab(next); }} />
     </SafeAreaView>
@@ -703,11 +721,13 @@ function ProfileScreen({
   goals,
   posts,
   friends,
+  onOpenReminders,
 }: {
   user: User;
   goals: Goal[];
   posts: Post[];
   friends: Friend[];
+  onOpenReminders: () => void;
 }) {
   const mine = posts.filter((post) => post.mine);
   return (
@@ -747,14 +767,236 @@ function ProfileScreen({
         </View>
       )}
       <View style={styles.settingsCard}>
-        {['Account & privacy', 'Notification settings', 'Community guidelines'].map((item) => (
-          <Pressable key={item} style={styles.settingsRow}>
-            <Text style={styles.settingsText}>{item}</Text><Text style={styles.settingsArrow}>›</Text>
+        {[
+          { label: 'Account & privacy' },
+          { label: 'Reminder settings', action: onOpenReminders },
+          { label: 'Community guidelines' },
+        ].map((item) => (
+          <Pressable key={item.label} style={styles.settingsRow} onPress={item.action}>
+            <Text style={styles.settingsText}>{item.label}</Text><Text style={styles.settingsArrow}>›</Text>
           </Pressable>
         ))}
       </View>
     </ScrollView>
   );
+}
+
+type ReminderName = 'morning' | 'evening';
+type ReminderState = {
+  enabled: boolean;
+  hour: number;
+  minute: number;
+  notificationId?: string;
+};
+
+const reminderStorageKey = 'be-discipline-reminders-v1';
+const defaultReminders: Record<ReminderName, ReminderState> = {
+  morning: { enabled: false, hour: 8, minute: 0 },
+  evening: { enabled: false, hour: 20, minute: 30 },
+};
+
+function RemindersScreen({ onBack }: { onBack: () => void }) {
+  const [reminders, setReminders] = useState(defaultReminders);
+  const [editing, setEditing] = useState<ReminderName | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(reminderStorageKey)
+      .then((value) => value && setReminders(JSON.parse(value)))
+      .finally(() => setReady(true));
+  }, []);
+
+  async function ensurePermission() {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('discipline-reminders', {
+        name: 'Daily discipline reminders',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 180, 120, 180],
+        lightColor: C.coral,
+      });
+    }
+    const current = await Notifications.getPermissionsAsync();
+    if (current.status === 'granted') return true;
+    const requested = await Notifications.requestPermissionsAsync();
+    return requested.status === 'granted';
+  }
+
+  async function saveReminder(name: ReminderName, next: ReminderState) {
+    const updated = { ...reminders, [name]: next };
+    setReminders(updated);
+    await AsyncStorage.setItem(reminderStorageKey, JSON.stringify(updated));
+  }
+
+  async function toggleReminder(name: ReminderName) {
+    const current = reminders[name];
+    if (current.enabled) {
+      if (current.notificationId) {
+        await Notifications.cancelScheduledNotificationAsync(current.notificationId);
+      }
+      await saveReminder(name, { ...current, enabled: false, notificationId: undefined });
+      return;
+    }
+
+    const granted = await ensurePermission();
+    if (!granted) {
+      Alert.alert(
+        'Notifications are off',
+        'Allow notifications in your phone settings to use daily reminders.',
+      );
+      return;
+    }
+    const notificationId = await scheduleDailyReminder(name, current.hour, current.minute);
+    await saveReminder(name, { ...current, enabled: true, notificationId });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  async function changeTime(name: ReminderName, event: DateTimePickerEvent, date?: Date) {
+    if (Platform.OS === 'android') setEditing(null);
+    if (event.type === 'dismissed' || !date) return;
+    const current = reminders[name];
+    if (current.notificationId) {
+      await Notifications.cancelScheduledNotificationAsync(current.notificationId);
+    }
+    const next = { ...current, hour: date.getHours(), minute: date.getMinutes() };
+    const notificationId = current.enabled
+      ? await scheduleDailyReminder(name, next.hour, next.minute)
+      : undefined;
+    await saveReminder(name, { ...next, notificationId });
+  }
+
+  if (!ready) {
+    return <View style={styles.reminderLoading}><ActivityIndicator color={C.coral} /></View>;
+  }
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <Pressable style={styles.reminderBack} onPress={onBack}>
+        <Text style={styles.back}>← Profile</Text>
+      </Pressable>
+      <Header label="DAILY RHYTHM" title="Reminders that help." />
+      <Text style={styles.reminderIntro}>
+        Gentle prompts, scheduled on this phone. These work without a community backend.
+      </Text>
+
+      <View style={styles.reminderCard}>
+        <ReminderRow
+          icon="☀"
+          title="Morning commitment"
+          description="Review today's promises before the day gets busy."
+          reminder={reminders.morning}
+          onToggle={() => toggleReminder('morning')}
+          onEdit={() => setEditing(editing === 'morning' ? null : 'morning')}
+        />
+        <ReminderRow
+          icon="◐"
+          title="Evening check-in"
+          description="Log proof, reflect honestly, and close the day."
+          reminder={reminders.evening}
+          onToggle={() => toggleReminder('evening')}
+          onEdit={() => setEditing(editing === 'evening' ? null : 'evening')}
+          last
+        />
+      </View>
+
+      {editing && (
+        <View style={styles.timePickerCard}>
+          <Text style={styles.fieldLabel}>
+            {editing === 'morning' ? 'MORNING COMMITMENT' : 'EVENING CHECK-IN'}
+          </Text>
+          <DateTimePicker
+            value={timeAsDate(reminders[editing])}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(event, date) => changeTime(editing, event, date)}
+            accentColor={C.coral}
+          />
+          {Platform.OS === 'ios' && (
+            <Pressable style={styles.timeDone} onPress={() => setEditing(null)}>
+              <Text style={styles.timeDoneText}>Done</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      <View style={styles.reminderNote}>
+        <Text style={styles.reminderNoteIcon}>i</Text>
+        <Text style={styles.reminderNoteText}>
+          Your phone controls final delivery. Focus modes, battery settings, and notification
+          permissions may silence a reminder.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+function ReminderRow({
+  icon,
+  title,
+  description,
+  reminder,
+  onToggle,
+  onEdit,
+  last,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  reminder: ReminderState;
+  onToggle: () => void;
+  onEdit: () => void;
+  last?: boolean;
+}) {
+  return (
+    <View style={[styles.reminderRow, last && styles.noBorder]}>
+      <View style={styles.reminderIcon}><Text style={styles.reminderIconText}>{icon}</Text></View>
+      <View style={styles.reminderCopy}>
+        <Text style={styles.reminderTitle}>{title}</Text>
+        <Text style={styles.reminderDescription}>{description}</Text>
+        <Pressable onPress={onEdit}>
+          <Text style={styles.reminderTime}>{formatTime(reminder.hour, reminder.minute)} · Change</Text>
+        </Pressable>
+      </View>
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityState={{ checked: reminder.enabled }}
+        style={[styles.toggle, reminder.enabled && styles.toggleOn]}
+        onPress={onToggle}>
+        <View style={[styles.toggleKnob, reminder.enabled && styles.toggleKnobOn]} />
+      </Pressable>
+    </View>
+  );
+}
+
+async function scheduleDailyReminder(name: ReminderName, hour: number, minute: number) {
+  const morning = name === 'morning';
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: morning ? 'Make today intentional.' : 'Close the loop.',
+      body: morning
+        ? 'Review the promises you chose for today.'
+        : 'Log your proof and complete your evening check-in.',
+      sound: true,
+      data: { screen: morning ? 'today' : 'log' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+      channelId: 'discipline-reminders',
+    },
+  });
+}
+
+function timeAsDate(reminder: ReminderState) {
+  const date = new Date();
+  date.setHours(reminder.hour, reminder.minute, 0, 0);
+  return date;
+}
+
+function formatTime(hour: number, minute: number) {
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
@@ -768,7 +1010,7 @@ function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }
   return (
     <View style={styles.bottomNav}>
       {items.map((item) => {
-        const active = tab === item.id;
+        const active = tab === item.id || (item.id === 'profile' && tab === 'reminders');
         const central = item.id === 'log';
         return (
           <Pressable key={item.id} style={styles.navItem} onPress={() => onChange(item.id)}>
@@ -964,6 +1206,27 @@ const styles = StyleSheet.create({
   settingsRow: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: C.line },
   settingsText: { color: C.ink, fontSize: 11, fontWeight: '800' },
   settingsArrow: { color: C.muted, fontSize: 22 },
+  reminderLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.cream },
+  reminderBack: { alignSelf: 'flex-start', marginBottom: 28 },
+  reminderIntro: { color: C.muted, fontSize: 13, lineHeight: 20, marginTop: -12, marginBottom: 25 },
+  reminderCard: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, paddingHorizontal: 16 },
+  reminderRow: { minHeight: 144, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: C.line, paddingVertical: 20 },
+  reminderIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E4E7DA' },
+  reminderIconText: { color: C.ink, fontSize: 19 },
+  reminderCopy: { flex: 1 },
+  reminderTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 20, marginBottom: 5 },
+  reminderDescription: { color: C.muted, fontSize: 9, lineHeight: 14, marginBottom: 9 },
+  reminderTime: { color: C.coral, fontSize: 10, fontWeight: '900' },
+  toggle: { width: 45, height: 26, borderRadius: 13, backgroundColor: '#CECEC4', padding: 3, justifyContent: 'center' },
+  toggleOn: { backgroundColor: C.ink },
+  toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: C.white },
+  toggleKnobOn: { alignSelf: 'flex-end' },
+  timePickerCard: { marginTop: 14, padding: 18, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
+  timeDone: { alignSelf: 'flex-end', backgroundColor: C.ink, paddingHorizontal: 18, paddingVertical: 10 },
+  timeDoneText: { color: C.white, fontSize: 10, fontWeight: '900' },
+  reminderNote: { flexDirection: 'row', gap: 11, backgroundColor: '#E5E8DC', padding: 16, marginTop: 18 },
+  reminderNoteIcon: { width: 20, height: 20, borderRadius: 10, textAlign: 'center', lineHeight: 20, backgroundColor: C.ink, color: C.white, fontSize: 10, fontWeight: '900' },
+  reminderNoteText: { flex: 1, color: C.muted, fontSize: 9, lineHeight: 14 },
   bottomNav: { minHeight: 70, paddingBottom: Platform.OS === 'ios' ? 10 : 4, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.paper, flexDirection: 'row', alignItems: 'center' },
   navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
   navIcon: { color: C.muted, fontSize: 19, fontWeight: '700' },

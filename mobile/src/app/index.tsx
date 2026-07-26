@@ -71,6 +71,8 @@ type Goal = {
   done: boolean;
   completedDate?: string;
   completionDates?: string[];
+  weeklyGoalId?: string;
+  plannedDays?: number[];
   reminder?: GoalReminder;
 };
 
@@ -79,6 +81,7 @@ type GoalReminder = {
   hour: number;
   minute: number;
   notificationId?: string;
+  notificationIds?: string[];
 };
 
 type WeeklyGoal = {
@@ -120,9 +123,9 @@ type Post = {
 };
 
 const starterGoals: Goal[] = [
-  { id: 'g1', title: 'Strength training', detail: '45 min · Upper body', category: 'MOVE', done: false },
-  { id: 'g2', title: 'Cook a balanced dinner', detail: 'Protein + greens', category: 'FUEL', done: false },
-  { id: 'g3', title: 'Evening walk', detail: '30 min · Phone stays home', category: 'FOCUS', done: false },
+  { id: 'g1', title: 'Strength training', detail: '45 min · Upper body', category: 'MOVE', done: false, weeklyGoalId: 'weekly-exercise', plannedDays: [1, 3, 5] },
+  { id: 'g2', title: 'Cook a balanced dinner', detail: 'Protein + greens', category: 'FUEL', done: false, weeklyGoalId: 'weekly-meals', plannedDays: [2, 4, 6] },
+  { id: 'g3', title: 'Evening walk', detail: '30 min · Phone stays home', category: 'MOVE', done: false, weeklyGoalId: 'weekly-exercise', plannedDays: [7] },
 ];
 
 function dateKey(date: Date) {
@@ -155,13 +158,7 @@ function currentWeekDates() {
 }
 
 function weeklyGoalMatchesDaily(weeklyGoal: WeeklyGoal, dailyGoal: Goal) {
-  if (weeklyGoal.id === 'weekly-exercise') return dailyGoal.category === 'MOVE';
-  if (weeklyGoal.id === 'weekly-meals') return dailyGoal.category === 'FUEL';
-  const keywords = weeklyGoal.title
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((word) => word.length > 3 && !['enough', 'minutes'].includes(word));
-  return keywords.some((word) => dailyGoal.title.toLowerCase().includes(word));
+  return dailyGoal.weeklyGoalId === weeklyGoal.id;
 }
 
 const starterWeeklyGoals: WeeklyGoal[] = [
@@ -283,6 +280,14 @@ export default function App() {
               completionDates,
               completedDate: completionDates.at(-1),
               done: completionDates.includes(today),
+              plannedDays: goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7],
+              weeklyGoalId:
+                goal.weeklyGoalId ??
+                (goal.category === 'MOVE'
+                  ? 'weekly-exercise'
+                  : goal.category === 'FUEL'
+                    ? 'weekly-meals'
+                    : undefined),
             };
           }),
         );
@@ -580,8 +585,12 @@ function TodayScreen({
   onLog: (goal: Goal) => void;
   onLogWeekly: (goal: WeeklyGoal) => void;
 }) {
-  const completed = goals.filter((goal) => goal.done).length;
-  const progress = `${(completed / goals.length) * 100}%` as `${number}%`;
+  const todayWeekday = new Date().getDay() || 7;
+  const todayGoals = goals.filter((goal) =>
+    (goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]).includes(todayWeekday),
+  );
+  const completed = todayGoals.filter((goal) => goal.done).length;
+  const progress = `${todayGoals.length ? (completed / todayGoals.length) * 100 : 0}%` as `${number}%`;
   const weekDates = currentWeekDates();
   const today = dateKey(new Date());
   const dateLabel = new Intl.DateTimeFormat(undefined, {
@@ -624,19 +633,26 @@ function TodayScreen({
 
       <View style={styles.nativeSectionHeader}>
         <Text style={styles.nativeSectionTitle}>Daily goals</Text>
-        <Text style={styles.nativeSectionMeta}>{completed} of {goals.length}</Text>
+        <Text style={styles.nativeSectionMeta}>{completed} of {todayGoals.length}</Text>
       </View>
       <View style={styles.nativeProgressTrack}>
         <View style={[styles.nativeProgressFill, { width: progress }]} />
       </View>
 
       <View style={styles.nativeList}>
-        {goals.map((goal, index) => {
+        {!todayGoals.length && (
+          <View style={styles.noGoalsToday}>
+            <Text style={styles.noGoalsTodayTitle}>Nothing scheduled today.</Text>
+            <Text style={styles.noGoalsTodayText}>Your next planned goal will appear here.</Text>
+          </View>
+        )}
+        {todayGoals.map((goal, index) => {
           const colors = categoryColors[goal.category];
+          const linkedWeeklyGoal = weeklyGoals.find((weeklyGoal) => weeklyGoal.id === goal.weeklyGoalId);
           return (
             <View
               key={goal.id}
-              style={[styles.nativeGoalRow, index === goals.length - 1 && styles.nativeLastRow]}>
+              style={[styles.nativeGoalRow, index === todayGoals.length - 1 && styles.nativeLastRow]}>
               <View
                 style={[
                   styles.nativeStatusCircle,
@@ -654,7 +670,7 @@ function TodayScreen({
               <View style={styles.nativeGoalCopy}>
                 <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
                 <Text style={[styles.nativeGoalCategory, { color: colors.accent }]}>
-                  {goal.category.toLowerCase()}
+                  {linkedWeeklyGoal?.title ?? goal.category.toLowerCase()}
                   {goal.reminder?.enabled
                     ? ` · ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
                     : ''}
@@ -694,6 +710,16 @@ function TodayScreen({
           const remaining = Math.max(0, goal.target - current);
           const completedToday = goal.completionDates.includes(today);
           const percent = Math.min(100, Math.round((current / goal.target) * 100));
+          const linkedPlannedDays = Array.from(
+            new Set(
+              goals
+                .filter((dailyGoal) => dailyGoal.weeklyGoalId === goal.id)
+                .flatMap((dailyGoal) => dailyGoal.plannedDays ?? []),
+            ),
+          );
+          const displayedPlannedDays = linkedPlannedDays.length
+            ? linkedPlannedDays
+            : goal.plannedDays;
           return (
             <View key={goal.id} style={styles.weeklyDashboardCard}>
               <View style={styles.weeklyDashboardTop}>
@@ -721,7 +747,7 @@ function TodayScreen({
                 {weekDates.map((date, index) => {
                   const key = dateKey(date);
                   const complete = goal.completionDates.includes(key);
-                  const planned = goal.plannedDays.includes(index + 1);
+                  const planned = displayedPlannedDays.includes(index + 1);
                   return (
                     <View key={key} style={styles.weeklyDay}>
                       <Text style={styles.weeklyDayLabel}>
@@ -796,6 +822,8 @@ function GoalSettingsScreen({
 }) {
   const [editing, setEditing] = useState<Goal | 'new' | null>(null);
   const [title, setTitle] = useState('');
+  const [weeklyGoalId, setWeeklyGoalId] = useState<string | null>(null);
+  const [plannedDays, setPlannedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [reminder, setReminder] = useState<GoalReminder>({
     enabled: false,
     hour: 9,
@@ -804,14 +832,26 @@ function GoalSettingsScreen({
 
   function beginNewGoal() {
     setTitle('');
+    setWeeklyGoalId(null);
+    setPlannedDays([1, 2, 3, 4, 5, 6, 7]);
     setReminder({ enabled: false, hour: 9, minute: 0 });
     setEditing('new');
   }
 
   function beginEditGoal(goal: Goal) {
     setTitle(goal.title);
+    setWeeklyGoalId(goal.weeklyGoalId ?? null);
+    setPlannedDays(goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]);
     setReminder(goal.reminder ?? { enabled: false, hour: 9, minute: 0 });
     setEditing(goal);
+  }
+
+  function toggleDailyDay(day: number) {
+    setPlannedDays((current) =>
+      current.includes(day)
+        ? current.filter((value) => value !== day)
+        : [...current, day].sort((a, b) => a - b),
+    );
   }
 
   function inferCategory(value: string): Goal['category'] {
@@ -822,44 +862,52 @@ function GoalSettingsScreen({
 
   async function saveDailyGoal() {
     const cleanTitle = title.trim();
-    if (!cleanTitle) return;
+    if (!cleanTitle || !weeklyGoalId || !plannedDays.length) return;
     const original = editing === 'new' ? undefined : editing ?? undefined;
+    const linkedWeeklyGoal = weeklyGoals.find((goal) => goal.id === weeklyGoalId);
     let nextReminder: GoalReminder | undefined = reminder;
+    const originalReminderIds = original?.reminder?.notificationIds ??
+      (original?.reminder?.notificationId ? [original.reminder.notificationId] : []);
     const reminderUnchanged =
       original?.reminder?.enabled &&
-      original.reminder.notificationId &&
+      originalReminderIds.length > 0 &&
       reminder.enabled &&
       original.reminder.hour === reminder.hour &&
-      original.reminder.minute === reminder.minute;
+      original.reminder.minute === reminder.minute &&
+      JSON.stringify(original.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]) === JSON.stringify(plannedDays);
 
-    if (original?.reminder?.notificationId && !reminderUnchanged) {
-      await Notifications.cancelScheduledNotificationAsync(original.reminder.notificationId);
+    if (originalReminderIds.length && !reminderUnchanged) {
+      await Promise.all(
+        originalReminderIds.map((id) => Notifications.cancelScheduledNotificationAsync(id)),
+      );
     }
 
     const nextGoal: Goal = {
       id: original?.id ?? `goal-${Date.now()}`,
       title: cleanTitle,
       detail: '',
-      category: inferCategory(cleanTitle),
+      category: linkedWeeklyGoal?.category ?? inferCategory(cleanTitle),
       done: original?.done ?? false,
       completedDate: original?.completedDate,
       completionDates: original?.completionDates,
+      weeklyGoalId,
+      plannedDays,
       reminder: nextReminder,
     };
 
     if (reminder.enabled && !reminderUnchanged) {
       const granted = await ensureNotificationPermission();
       if (granted) {
-        const notificationId = await scheduleGoalReminder(nextGoal);
-        nextReminder = { ...reminder, notificationId };
+        const notificationIds = await scheduleGoalReminders(nextGoal);
+        nextReminder = { ...reminder, notificationId: undefined, notificationIds };
       } else {
-        nextReminder = { ...reminder, enabled: false, notificationId: undefined };
+        nextReminder = { ...reminder, enabled: false, notificationId: undefined, notificationIds: [] };
         Alert.alert('Alarm not enabled', 'Allow notifications in phone settings to use goal alarms.');
       }
     } else if (reminderUnchanged) {
-      nextReminder = { ...reminder, notificationId: original?.reminder?.notificationId };
+      nextReminder = { ...reminder, notificationId: undefined, notificationIds: originalReminderIds };
     } else {
-      nextReminder = { ...reminder, notificationId: undefined };
+      nextReminder = { ...reminder, notificationId: undefined, notificationIds: [] };
     }
 
     const savedGoal = { ...nextGoal, reminder: nextReminder };
@@ -871,9 +919,9 @@ function GoalSettingsScreen({
   }
 
   async function deleteGoal(goal: Goal) {
-    if (goal.reminder?.notificationId) {
-      await Notifications.cancelScheduledNotificationAsync(goal.reminder.notificationId);
-    }
+    const reminderIds = goal.reminder?.notificationIds ??
+      (goal.reminder?.notificationId ? [goal.reminder.notificationId] : []);
+    await Promise.all(reminderIds.map((id) => Notifications.cancelScheduledNotificationAsync(id)));
     onSave(goals.filter((item) => item.id !== goal.id), weeklyGoals);
     setEditing(null);
   }
@@ -885,17 +933,6 @@ function GoalSettingsScreen({
     onSave(goals, nextWeekly);
   }
 
-  function togglePlannedDay(id: string, day: number) {
-    const nextWeekly = weeklyGoals.map((goal) => {
-      if (goal.id !== id) return goal;
-      const plannedDays = goal.plannedDays.includes(day)
-        ? goal.plannedDays.filter((value) => value !== day)
-        : [...goal.plannedDays, day].sort((a, b) => a - b);
-      return { ...goal, plannedDays };
-    });
-    onSave(goals, nextWeekly);
-  }
-
   function addWeeklyGoal(idea: WeeklyGoal) {
     if (weeklyGoals.some((goal) => goal.id === idea.id)) return;
     onSave(goals, [...weeklyGoals, idea]);
@@ -903,6 +940,7 @@ function GoalSettingsScreen({
 
   if (editing) {
     const existing = editing === 'new' ? null : editing;
+    const canSave = Boolean(title.trim() && weeklyGoalId && plannedDays.length);
     return (
       <KeyboardAvoidingView
         style={styles.goalSettingsScreen}
@@ -912,8 +950,8 @@ function GoalSettingsScreen({
             <Text style={styles.settingsNavAction}>Cancel</Text>
           </Pressable>
           <Text style={styles.settingsNavTitle}>{existing ? 'Edit goal' : 'New goal'}</Text>
-          <Pressable accessibilityRole="button" disabled={!title.trim()} onPress={saveDailyGoal}>
-            <Text style={[styles.settingsNavAction, styles.settingsSave, !title.trim() && styles.disabled]}>
+          <Pressable accessibilityRole="button" disabled={!canSave} onPress={saveDailyGoal}>
+            <Text style={[styles.settingsNavAction, styles.settingsSave, !canSave && styles.disabled]}>
               Save
             </Text>
           </Pressable>
@@ -932,6 +970,66 @@ function GoalSettingsScreen({
               autoFocus
               returnKeyType="done"
             />
+          </View>
+
+          <Text style={styles.settingsSectionLabel}>CONTRIBUTES TO</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.goalLinkChoices}>
+            {weeklyGoals.map((goal) => {
+              const colors = categoryColors[goal.category];
+              const selected = weeklyGoalId === goal.id;
+              return (
+                <Pressable
+                  key={goal.id}
+                  style={[
+                    styles.goalLinkChoice,
+                    selected && { borderColor: colors.accent, backgroundColor: colors.tint },
+                  ]}
+                  onPress={() => setWeeklyGoalId(goal.id)}>
+                  <View style={[styles.goalHubDot, { backgroundColor: colors.accent }]} />
+                  <View style={styles.nativeGoalCopy}>
+                    <Text style={styles.goalLinkTitle}>{goal.title}</Text>
+                    <Text style={styles.goalLinkMeta}>{goal.target} {goal.unit} each week</Text>
+                  </View>
+                  {selected && (
+                    <SymbolView
+                      name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }}
+                      size={21}
+                      tintColor={colors.accent}
+                    />
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <Text style={styles.settingsSectionLabel}>SHOW ON</Text>
+          <View style={styles.dailyScheduleCard}>
+            <View style={styles.dailyScheduleDays}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, index) => {
+                const selected = plannedDays.includes(index + 1);
+                const linked = weeklyGoals.find((goal) => goal.id === weeklyGoalId);
+                const accent = linked ? categoryColors[linked.category].accent : C.coral;
+                return (
+                  <Pressable
+                    key={`${label}-${index}`}
+                    style={[
+                      styles.dailyScheduleDay,
+                      selected && { backgroundColor: accent, borderColor: accent },
+                    ]}
+                    onPress={() => toggleDailyDay(index + 1)}>
+                    <Text style={[styles.dailyScheduleDayText, selected && styles.weeklyPlanDayTextSelected]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.dailyScheduleHint}>
+              This goal only appears on the selected days.
+            </Text>
           </View>
 
           <Text style={styles.settingsSectionLabel}>ALARM · OPTIONAL</Text>
@@ -1000,6 +1098,10 @@ function GoalSettingsScreen({
       <View style={styles.nativeList}>
         {goals.map((goal, index) => {
           const colors = categoryColors[goal.category];
+          const linked = weeklyGoals.find((weeklyGoal) => weeklyGoal.id === goal.weeklyGoalId);
+          const dayLabels = (goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7])
+            .map((day) => ['M', 'T', 'W', 'T', 'F', 'S', 'S'][day - 1])
+            .join(' · ');
           return (
             <Pressable
               key={goal.id}
@@ -1009,9 +1111,10 @@ function GoalSettingsScreen({
               <View style={styles.nativeGoalCopy}>
                 <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
                 <Text style={styles.nativeGoalCategory}>
+                  {linked?.title ?? 'Not linked'} · {dayLabels}
                   {goal.reminder?.enabled
-                    ? `Alarm ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
-                    : 'No alarm'}
+                    ? ` · ${formatTime(goal.reminder.hour, goal.reminder.minute)}`
+                    : ''}
                 </Text>
               </View>
               <Text style={styles.settingsArrow}>›</Text>
@@ -1024,6 +1127,10 @@ function GoalSettingsScreen({
       <View style={styles.weeklyPlanList}>
         {weeklyGoals.map((goal) => {
           const colors = categoryColors[goal.category];
+          const linkedDailyGoals = goals.filter((dailyGoal) => dailyGoal.weeklyGoalId === goal.id);
+          const linkedDays = Array.from(
+            new Set(linkedDailyGoals.flatMap((dailyGoal) => dailyGoal.plannedDays ?? [])),
+          ).sort((a, b) => a - b);
           return (
           <View key={goal.id} style={styles.weeklyPlanCard}>
             <View style={styles.weeklyPlanTop}>
@@ -1041,25 +1148,14 @@ function GoalSettingsScreen({
                 </Pressable>
               </View>
             </View>
-            <Text style={styles.weeklyPlanLabel}>PLANNED DAYS · OPTIONAL</Text>
-            <View style={styles.weeklyPlanDays}>
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, index) => {
-                const selected = goal.plannedDays.includes(index + 1);
-                return (
-                  <Pressable
-                    key={`${label}-${index}`}
-                    style={[
-                      styles.weeklyPlanDay,
-                      selected && { backgroundColor: colors.accent, borderColor: colors.accent },
-                    ]}
-                    onPress={() => togglePlannedDay(goal.id, index + 1)}>
-                    <Text style={[styles.weeklyPlanDayText, selected && styles.weeklyPlanDayTextSelected]}>
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Text style={styles.weeklyPlanLabel}>LINKED DAILY GOALS</Text>
+            <Text style={styles.weeklyLinkedSummary}>
+              {linkedDailyGoals.length
+                ? `${linkedDailyGoals.length} ${linkedDailyGoals.length === 1 ? 'goal' : 'goals'} · ${linkedDays
+                    .map((day) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day - 1])
+                    .join(', ')}`
+                : 'None yet — create a daily goal to schedule it'}
+            </Text>
           </View>
           );
         })}
@@ -1703,23 +1799,29 @@ async function scheduleDailyReminder(name: ReminderName, hour: number, minute: n
   });
 }
 
-async function scheduleGoalReminder(goal: Goal) {
+async function scheduleGoalReminders(goal: Goal) {
   const reminder = goal.reminder;
   if (!reminder) throw new Error('Cannot schedule a goal without a reminder time.');
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title: `Time for ${goal.title}`,
-      body: goal.detail || 'You planned this. Start small and show up.',
-      sound: true,
-      data: { screen: 'today', goalId: goal.id },
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: reminder.hour,
-      minute: reminder.minute,
-      channelId: 'discipline-reminders',
-    },
-  });
+  const plannedDays = goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7];
+  return Promise.all(
+    plannedDays.map((day) =>
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: `Time for ${goal.title}`,
+          body: goal.detail || 'You planned this. Start small and show up.',
+          sound: true,
+          data: { screen: 'today', goalId: goal.id },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+          weekday: day === 7 ? 1 : day + 1,
+          hour: reminder.hour,
+          minute: reminder.minute,
+          channelId: 'discipline-reminders',
+        },
+      }),
+    ),
+  );
 }
 
 function timeAsDate(reminder: { hour: number; minute: number }) {
@@ -1839,6 +1941,9 @@ const styles = StyleSheet.create({
   nativeDoneButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.blush, borderRadius: 17, paddingHorizontal: 12 },
   nativeDoneText: { color: C.coral, fontSize: 13, fontWeight: '600' },
   nativePressed: { opacity: 0.55 },
+  noGoalsToday: { minHeight: 92, justifyContent: 'center', paddingRight: 16 },
+  noGoalsTodayTitle: { color: C.inkDark, fontSize: 15, fontWeight: '700' },
+  noGoalsTodayText: { color: C.muted, fontSize: 12, marginTop: 4 },
   nativeWeekRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
   nativeWeekIcon: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   nativeWeekCount: { color: C.muted, fontSize: 13, fontWeight: '600' },
@@ -1866,6 +1971,15 @@ const styles = StyleSheet.create({
   singleGoalContent: { paddingHorizontal: 16, paddingTop: 28, paddingBottom: 40 },
   singleGoalCard: { backgroundColor: C.paper, borderRadius: 12, paddingHorizontal: 16, marginBottom: 28, overflow: 'hidden' },
   singleGoalInput: { minHeight: 56, color: C.inkDark, fontSize: 17 },
+  goalLinkChoices: { gap: 8, paddingRight: 16, marginBottom: 28 },
+  goalLinkChoice: { width: 172, minHeight: 68, borderRadius: 12, borderWidth: 1.5, borderColor: 'transparent', backgroundColor: C.paper, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
+  goalLinkTitle: { color: C.inkDark, fontSize: 14, fontWeight: '700' },
+  goalLinkMeta: { color: C.muted, fontSize: 11, marginTop: 3 },
+  dailyScheduleCard: { backgroundColor: C.paper, borderRadius: 12, padding: 16, marginBottom: 28 },
+  dailyScheduleDays: { flexDirection: 'row', justifyContent: 'space-between' },
+  dailyScheduleDay: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  dailyScheduleDayText: { color: C.muted, fontSize: 11, fontWeight: '700' },
+  dailyScheduleHint: { color: C.muted, fontSize: 11, marginTop: 12 },
   simpleAlarmRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   deleteGoalButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper, borderRadius: 12 },
   deleteGoalText: { color: '#D23B3B', fontSize: 15, fontWeight: '600' },
@@ -1881,6 +1995,7 @@ const styles = StyleSheet.create({
   weeklyPlanCard: { backgroundColor: C.paper, borderRadius: 14, paddingHorizontal: 16, paddingBottom: 15 },
   weeklyPlanTop: { minHeight: 66, flexDirection: 'row', alignItems: 'center' },
   weeklyPlanLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 9 },
+  weeklyLinkedSummary: { color: C.inkDark, fontSize: 12, lineHeight: 17 },
   weeklyPlanDays: { flexDirection: 'row', justifyContent: 'space-between' },
   weeklyPlanDay: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   weeklyPlanDayText: { color: C.muted, fontSize: 11, fontWeight: '700' },

@@ -3,6 +3,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,16 +30,16 @@ Notifications.setNotificationHandler({
 });
 
 const C = {
-  ink: '#173F35',
-  inkDark: '#102C25',
-  cream: '#F4F0E6',
-  paper: '#FCF9F1',
-  coral: '#EF6A47',
-  sage: '#A8B8A5',
-  muted: '#707971',
-  line: '#D9D8CC',
+  ink: '#1C1C1E',
+  inkDark: '#111111',
+  cream: '#F2F2F7',
+  paper: '#FFFFFF',
+  coral: '#3478F6',
+  sage: '#AEAEB2',
+  muted: '#6E6E73',
+  line: '#D1D1D6',
   white: '#FFFFFF',
-  blush: '#F7DED5',
+  blush: '#EAF2FF',
 };
 
 type Tab = 'today' | 'feed' | 'log' | 'friends' | 'profile' | 'reminders';
@@ -365,70 +366,88 @@ function TodayScreen({
 }) {
   const completed = goals.filter((goal) => goal.done).length;
   const progress = `${(completed / goals.length) * 100}%` as `${number}%`;
+  const dateLabel = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date());
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      <View style={styles.todayHeader}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.nativeTodayContent}>
+      <View style={styles.nativeTodayHeader}>
         <View>
-          <Text style={styles.todayDate}>THURSDAY · WEEK 31</Text>
-          <Text style={styles.todayTitle}>Today</Text>
+          <Text style={styles.nativeTodayTitle}>Today</Text>
+          <Text style={styles.nativeTodayDate}>{dateLabel}</Text>
         </View>
-        <View style={styles.avatar}><Text style={styles.avatarText}>{initials(user.name)}</Text></View>
-      </View>
-      <Text style={styles.todayGreeting}>Ready to show up, {user.name.split(' ')[0]}?</Text>
-      <View style={styles.todayProgress}>
-        <View style={styles.todayProgressCopy}>
-          <Text style={styles.todayProgressCount}>{completed} of {goals.length}</Text>
-          <Text style={styles.todayProgressLabel}>promises completed</Text>
-        </View>
-        <Text style={styles.todayProgressPercent}>{Math.round((completed / goals.length) * 100)}%</Text>
-      </View>
-      <View style={styles.todayProgressTrack}>
-        <View style={[styles.todayProgressFill, { width: progress }]} />
+        <View style={styles.nativeAvatar}><Text style={styles.nativeAvatarText}>{initials(user.name)}</Text></View>
       </View>
 
-      <Text style={styles.calmSectionTitle}>Your promises</Text>
-      <View style={styles.calmGoalList}>
-        {goals.map((goal) => (
-          <View key={goal.id} style={[styles.calmGoalCard, goal.done && styles.calmGoalDone]}>
-            <View style={styles.calmGoalTop}>
-              <Text style={styles.goalCategory}>{goal.category}</Text>
-              {goal.done && <Text style={styles.completedBadge}>COMPLETED</Text>}
+      <View style={styles.nativeSectionHeader}>
+        <Text style={styles.nativeSectionTitle}>Daily goals</Text>
+        <Text style={styles.nativeSectionMeta}>{completed} of {goals.length}</Text>
+      </View>
+      <View style={styles.nativeProgressTrack}>
+        <View style={[styles.nativeProgressFill, { width: progress }]} />
+      </View>
+
+      <View style={styles.nativeList}>
+        {goals.map((goal, index) => (
+          <View
+            key={goal.id}
+            style={[styles.nativeGoalRow, index === goals.length - 1 && styles.nativeLastRow]}>
+            <View style={[styles.nativeStatusCircle, goal.done && styles.nativeStatusCircleDone]}>
+              {goal.done && (
+                <SymbolView
+                  name={{ ios: 'checkmark', android: 'check', web: 'check' }}
+                  size={12}
+                  tintColor={C.white}
+                />
+              )}
             </View>
-            <Text style={[styles.calmGoalTitle, goal.done && styles.calmGoalTitleDone]}>{goal.title}</Text>
-            {goal.done ? (
-              <View style={styles.completedRow}>
-                <View style={styles.completedDot}><Text style={styles.completedCheck}>✓</Text></View>
-                <Text style={styles.completedText}>Promise kept</Text>
-              </View>
-            ) : (
+            <View style={styles.nativeGoalCopy}>
+              <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
+              <Text style={styles.nativeGoalCategory}>{goal.category.toLowerCase()}</Text>
+            </View>
+            {!goal.done && (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`I did ${goal.title}. Take a selfie`}
-                style={({ pressed }) => [styles.didItButton, pressed && styles.didItButtonPressed]}
+                style={({ pressed }) => [styles.nativeDoneButton, pressed && styles.nativePressed]}
                 onPress={() => onLog(goal)}>
-                <Text style={styles.didItCamera}>📷</Text>
-                <Text style={styles.didItText}>I did it — take selfie</Text>
+                <SymbolView
+                  name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
+                  size={15}
+                  tintColor={C.coral}
+                />
+                <Text style={styles.nativeDoneText}>Done</Text>
               </Pressable>
             )}
           </View>
         ))}
       </View>
 
-      <Text style={styles.calmSectionTitle}>This week</Text>
-      <View style={styles.weekPlan}>
-        <View style={styles.weekPlanRow}>
-          <View style={styles.weekPlanCopy}>
-            <Text style={styles.weekPlanTitle}>Exercise 4 times</Text>
-            <View style={styles.weekPlanTrack}><View style={[styles.weekPlanFill, { width: '75%' }]} /></View>
+      <View style={styles.nativeSectionHeader}>
+        <Text style={styles.nativeSectionTitle}>This week</Text>
+      </View>
+      <View style={styles.nativeList}>
+        <View style={styles.nativeWeekRow}>
+          <View style={styles.nativeWeekIcon}>
+            <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} size={18} tintColor={C.ink} />
           </View>
-          <Text style={styles.weekPlanCount}>3 / 4</Text>
+          <View style={styles.nativeGoalCopy}>
+            <Text style={styles.nativeGoalTitle}>Exercise</Text>
+            <Text style={styles.nativeGoalCategory}>3 of 4 times</Text>
+          </View>
+          <Text style={styles.nativeWeekCount}>75%</Text>
         </View>
-        <View style={[styles.weekPlanRow, styles.weekPlanRowLast]}>
-          <View style={styles.weekPlanCopy}>
-            <Text style={styles.weekPlanTitle}>Cook 5 balanced meals</Text>
-            <View style={styles.weekPlanTrack}><View style={[styles.weekPlanFill, { width: '40%' }]} /></View>
+        <View style={[styles.nativeWeekRow, styles.nativeLastRow]}>
+          <View style={styles.nativeWeekIcon}>
+            <SymbolView name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} size={18} tintColor={C.ink} />
           </View>
-          <Text style={styles.weekPlanCount}>2 / 5</Text>
+          <View style={styles.nativeGoalCopy}>
+            <Text style={styles.nativeGoalTitle}>Balanced meals</Text>
+            <Text style={styles.nativeGoalCategory}>2 of 5 meals</Text>
+          </View>
+          <Text style={styles.nativeWeekCount}>40%</Text>
         </View>
       </View>
     </ScrollView>
@@ -587,7 +606,9 @@ function LogScreen({
           </>
         ) : (
           <View style={styles.emptyPhoto}>
-            <View style={styles.cameraCircle}><Text style={styles.cameraIcon}>📷</Text></View>
+            <View style={styles.cameraCircle}>
+              <SymbolView name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} size={28} tintColor={C.ink} />
+            </View>
             <Text style={styles.photoTitle}>Take your completion selfie</Text>
             <Text style={styles.photoHint}>One tap. Your face is the proof.</Text>
             <View style={styles.photoActions}>
@@ -768,7 +789,7 @@ function ProfileScreen({
         ))
       ) : (
         <View style={styles.emptyProof}>
-          <Text style={styles.emptyProofIcon}>📷</Text>
+          <SymbolView name={{ ios: 'photo', android: 'image', web: 'image' }} size={38} tintColor={C.sage} />
           <Text style={styles.emptyProofTitle}>Your proof will live here.</Text>
           <Text style={styles.emptyProofText}>Complete an activity and share your first photo.</Text>
         </View>
@@ -1007,23 +1028,20 @@ function formatTime(hour: number, minute: number) {
 }
 
 function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
-  const items: { id: Tab; icon: string; label: string }[] = [
-    { id: 'today', icon: '●', label: 'Today' },
-    { id: 'feed', icon: '◫', label: 'Feed' },
-    { id: 'log', icon: '📷', label: 'Proof' },
-    { id: 'friends', icon: '♧', label: 'Friends' },
-    { id: 'profile', icon: '○', label: 'Me' },
-  ];
+  const items = [
+    { id: 'today', symbol: { ios: 'checklist', android: 'checklist', web: 'checklist' }, label: 'Today' },
+    { id: 'feed', symbol: { ios: 'person.2.fill', android: 'groups', web: 'groups' }, label: 'Feed' },
+    { id: 'log', symbol: { ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }, label: 'Proof' },
+    { id: 'friends', symbol: { ios: 'person.badge.plus', android: 'group_add', web: 'group_add' }, label: 'Friends' },
+    { id: 'profile', symbol: { ios: 'person.crop.circle', android: 'account_circle', web: 'account_circle' }, label: 'Me' },
+  ] as const;
   return (
     <View style={styles.bottomNav}>
       {items.map((item) => {
         const active = tab === item.id || (item.id === 'profile' && tab === 'reminders');
-        const central = item.id === 'log';
         return (
           <Pressable key={item.id} style={styles.navItem} onPress={() => onChange(item.id)}>
-            <View style={[central && styles.logNav, central && active && styles.logNavActive]}>
-              <Text style={[styles.navIcon, active && styles.navActive, central && styles.logNavIcon]}>{item.icon}</Text>
-            </View>
+            <SymbolView name={item.symbol} size={22} tintColor={active ? C.ink : C.muted} />
             <Text style={[styles.navLabel, active && styles.navActive]}>{item.label}</Text>
           </Pressable>
         );
@@ -1055,7 +1073,7 @@ const styles = StyleSheet.create({
   onboardMini: { color: C.cream, fontSize: 12, fontWeight: '900', letterSpacing: 3 },
   onboardBody: { flex: 1, paddingHorizontal: 28, paddingTop: 34, paddingBottom: 20, justifyContent: 'flex-start' },
   eyebrow: { color: C.coral, fontSize: 10, fontWeight: '900', letterSpacing: 1.6, marginBottom: 10 },
-  onboardTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 46, lineHeight: 47, letterSpacing: -2, marginBottom: 16 },
+  onboardTitle: { color: C.inkDark, fontSize: 42, lineHeight: 45, fontWeight: '800', letterSpacing: -1.5, marginBottom: 16 },
   onboardText: { color: C.muted, fontSize: 14, lineHeight: 21, marginBottom: 20 },
   primaryButton: { height: 56, paddingHorizontal: 20, backgroundColor: C.ink, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   primaryButtonText: { color: C.white, fontSize: 13, fontWeight: '900', letterSpacing: 0.4 },
@@ -1063,7 +1081,7 @@ const styles = StyleSheet.create({
   demoButtonText: { color: C.ink, fontSize: 13, fontWeight: '800', textDecorationLine: 'underline' },
   accountScreen: { flex: 1, padding: 24, justifyContent: 'space-between' },
   back: { color: C.ink, fontSize: 13, fontWeight: '800', marginTop: 6 },
-  accountTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 46, lineHeight: 48, letterSpacing: -2 },
+  accountTitle: { color: C.inkDark, fontSize: 40, lineHeight: 44, fontWeight: '800', letterSpacing: -1.4 },
   formGroup: { gap: 10 },
   fieldLabel: { color: C.ink, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginTop: 10, marginBottom: 7 },
   input: { height: 52, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper, paddingHorizontal: 15, color: C.inkDark, fontSize: 15 },
@@ -1072,10 +1090,36 @@ const styles = StyleSheet.create({
   usernameText: { flex: 1, height: '100%', paddingHorizontal: 6, color: C.inkDark, fontSize: 15 },
   disabled: { opacity: 0.35 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 26 },
-  headerTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 38, lineHeight: 39, letterSpacing: -1.7 },
+  headerTitle: { color: C.inkDark, fontSize: 32, lineHeight: 36, fontWeight: '800', letterSpacing: -1 },
   avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.ink },
   avatarText: { color: C.ink, fontSize: 11, fontWeight: '900' },
   avatarTextLight: { color: C.white, fontSize: 11, fontWeight: '900' },
+  nativeTodayContent: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 36 },
+  nativeTodayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 30 },
+  nativeTodayTitle: { color: C.inkDark, fontSize: 34, lineHeight: 39, fontWeight: '800', letterSpacing: -1 },
+  nativeTodayDate: { color: C.muted, fontSize: 13, marginTop: 3 },
+  nativeAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#E5E5EA', alignItems: 'center', justifyContent: 'center' },
+  nativeAvatarText: { color: C.ink, fontSize: 12, fontWeight: '700' },
+  nativeSectionHeader: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
+  nativeSectionTitle: { color: C.inkDark, fontSize: 17, fontWeight: '700' },
+  nativeSectionMeta: { color: C.muted, fontSize: 13 },
+  nativeProgressTrack: { height: 4, backgroundColor: '#DCDCE1', borderRadius: 2, marginHorizontal: 4, marginTop: 8, marginBottom: 14, overflow: 'hidden' },
+  nativeProgressFill: { height: '100%', backgroundColor: C.coral, borderRadius: 2 },
+  nativeList: { backgroundColor: C.paper, borderRadius: 12, paddingLeft: 16, marginBottom: 30, overflow: 'hidden' },
+  nativeGoalRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 12 },
+  nativeLastRow: { borderBottomWidth: 0 },
+  nativeStatusCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: C.sage, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  nativeStatusCircleDone: { backgroundColor: C.coral, borderColor: C.coral },
+  nativeGoalCopy: { flex: 1, paddingVertical: 13 },
+  nativeGoalTitle: { color: C.inkDark, fontSize: 15, fontWeight: '600' },
+  nativeGoalTitleDone: { color: C.muted, textDecorationLine: 'line-through' },
+  nativeGoalCategory: { color: C.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' },
+  nativeDoneButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.blush, borderRadius: 17, paddingHorizontal: 12 },
+  nativeDoneText: { color: C.coral, fontSize: 13, fontWeight: '600' },
+  nativePressed: { opacity: 0.55 },
+  nativeWeekRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
+  nativeWeekIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#E5E5EA', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  nativeWeekCount: { color: C.muted, fontSize: 13, fontWeight: '600' },
   todayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
   todayDate: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
   todayTitle: { color: C.inkDark, fontSize: 34, fontWeight: '800', letterSpacing: -1.1 },
@@ -1169,7 +1213,7 @@ const styles = StyleSheet.create({
   photoStampText: { color: C.white, fontSize: 8, fontWeight: '900', letterSpacing: 1.4 },
   postBody: { padding: 16 },
   postCategory: { color: C.coral, fontSize: 8, fontWeight: '900', letterSpacing: 1.3, marginBottom: 7 },
-  postActivity: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 26, marginBottom: 4 },
+  postActivity: { color: C.inkDark, fontSize: 22, fontWeight: '700', marginBottom: 4 },
   postDuration: { color: C.ink, fontSize: 10, fontWeight: '800', marginBottom: 13 },
   postCaption: { color: C.muted, fontSize: 12, lineHeight: 19, marginBottom: 16 },
   reactionRow: { flexDirection: 'row', gap: 8, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 13 },
@@ -1179,12 +1223,12 @@ const styles = StyleSheet.create({
   reactionText: { color: C.ink, fontSize: 10, fontWeight: '800' },
   completionGoalCard: { backgroundColor: C.ink, paddingHorizontal: 18, paddingVertical: 15, marginBottom: 12 },
   completionGoalCategory: { color: C.coral, fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginBottom: 5 },
-  completionGoalTitle: { color: C.white, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 22 },
+  completionGoalTitle: { color: C.white, fontSize: 20, fontWeight: '700' },
   photoPicker: { minHeight: 260, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, marginBottom: 20, overflow: 'hidden' },
   emptyPhoto: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', padding: 25 },
   cameraCircle: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#E7E9DD', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   cameraIcon: { color: C.ink, fontSize: 30 },
-  photoTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 22, marginBottom: 7 },
+  photoTitle: { color: C.inkDark, fontSize: 20, fontWeight: '700', marginBottom: 7 },
   photoHint: { color: C.muted, textAlign: 'center', fontSize: 11, lineHeight: 17, maxWidth: 260 },
   photoActions: { marginTop: 20 },
   cameraButton: { backgroundColor: C.ink, paddingHorizontal: 28, paddingVertical: 13 },
@@ -1228,7 +1272,7 @@ const styles = StyleSheet.create({
   profileTop: { alignItems: 'center', paddingTop: 15, paddingBottom: 26 },
   profileAvatar: { width: 82, height: 82, borderRadius: 41, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ink, marginBottom: 15 },
   profileInitials: { color: C.white, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 25 },
-  profileName: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 31, letterSpacing: -1 },
+  profileName: { color: C.inkDark, fontSize: 28, fontWeight: '800', letterSpacing: -0.8 },
   profileUsername: { color: C.coral, fontSize: 11, fontWeight: '800', marginTop: 4 },
   profileBio: { color: C.muted, fontSize: 12, marginTop: 10 },
   statsCard: { flexDirection: 'row', backgroundColor: C.ink, paddingVertical: 21, marginBottom: 32 },
@@ -1239,10 +1283,10 @@ const styles = StyleSheet.create({
   miniPost: { flexDirection: 'row', backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, marginBottom: 10, padding: 10 },
   miniImage: { width: 68, height: 68, marginRight: 13 },
   miniCopy: { flex: 1, justifyContent: 'center' },
-  miniTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 19 },
+  miniTitle: { color: C.inkDark, fontSize: 18, fontWeight: '700' },
   emptyProof: { alignItems: 'center', padding: 35, borderWidth: 1, borderColor: C.line, borderStyle: 'dashed', marginBottom: 25 },
   emptyProofIcon: { color: C.sage, fontSize: 42, marginBottom: 10 },
-  emptyProofTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 20, marginBottom: 6 },
+  emptyProofTitle: { color: C.inkDark, fontSize: 19, fontWeight: '700', marginBottom: 6 },
   emptyProofText: { color: C.muted, fontSize: 10 },
   settingsCard: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, paddingHorizontal: 15, marginTop: 18 },
   settingsRow: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: C.line },
@@ -1256,7 +1300,7 @@ const styles = StyleSheet.create({
   reminderIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E4E7DA' },
   reminderIconText: { color: C.ink, fontSize: 19 },
   reminderCopy: { flex: 1 },
-  reminderTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 20, marginBottom: 5 },
+  reminderTitle: { color: C.inkDark, fontSize: 18, fontWeight: '700', marginBottom: 5 },
   reminderDescription: { color: C.muted, fontSize: 9, lineHeight: 14, marginBottom: 9 },
   reminderTime: { color: C.coral, fontSize: 10, fontWeight: '900' },
   toggle: { width: 45, height: 26, borderRadius: 13, backgroundColor: '#CECEC4', padding: 3, justifyContent: 'center' },
@@ -1269,11 +1313,11 @@ const styles = StyleSheet.create({
   reminderNote: { flexDirection: 'row', gap: 11, backgroundColor: '#E5E8DC', padding: 16, marginTop: 18 },
   reminderNoteIcon: { width: 20, height: 20, borderRadius: 10, textAlign: 'center', lineHeight: 20, backgroundColor: C.ink, color: C.white, fontSize: 10, fontWeight: '900' },
   reminderNoteText: { flex: 1, color: C.muted, fontSize: 9, lineHeight: 14 },
-  bottomNav: { minHeight: 70, paddingBottom: Platform.OS === 'ios' ? 10 : 4, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.paper, flexDirection: 'row', alignItems: 'center' },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  bottomNav: { minHeight: 72, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 11 : 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line, backgroundColor: C.paper, flexDirection: 'row', alignItems: 'center' },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   navIcon: { color: C.muted, fontSize: 19, fontWeight: '700' },
-  navLabel: { color: C.muted, fontSize: 8, fontWeight: '800' },
-  navActive: { color: C.coral },
+  navLabel: { color: C.muted, fontSize: 10, fontWeight: '500' },
+  navActive: { color: C.ink, fontWeight: '600' },
   logNav: { width: 42, height: 42, marginTop: -22, borderRadius: 21, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', borderWidth: 4, borderColor: C.paper },
   logNavActive: { backgroundColor: C.coral },
   logNavIcon: { color: C.white, fontSize: 25, lineHeight: 27 },

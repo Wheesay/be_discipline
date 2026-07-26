@@ -74,6 +74,11 @@ type Goal = {
   weeklyGoalId?: string;
   plannedDays?: number[];
   location?: string;
+  bodyAreas?: string[];
+  calories?: number;
+  dailyTarget?: number;
+  dailyUnit?: string;
+  progressByDate?: Record<string, number>;
   reminder?: GoalReminder;
 };
 
@@ -121,6 +126,7 @@ type Post = {
   duration: string;
   reactions: Record<Reaction, number>;
   mine?: boolean;
+  shared?: boolean;
 };
 
 const starterGoals: Goal[] = [
@@ -187,6 +193,7 @@ const weeklyGoalIdeas: WeeklyGoal[] = [
   { id: 'weekly-walks', title: 'Go for a walk', target: 4, unit: 'days', category: 'MOVE', plannedDays: [1, 3, 5, 7], completionDates: [] },
   { id: 'weekly-water', title: 'Drink enough water', target: 7, unit: 'days', category: 'FUEL', plannedDays: [1, 2, 3, 4, 5, 6, 7], completionDates: [] },
   { id: 'weekly-cheat', title: 'Cheat day', target: 1, unit: 'day', category: 'FUEL', plannedDays: [7], completionDates: [] },
+  { id: 'weekly-study', title: 'Study', target: 5, unit: 'days', category: 'FOCUS', plannedDays: [1, 2, 3, 4, 5], completionDates: [] },
   { id: 'weekly-read', title: 'Read for 20 minutes', target: 4, unit: 'days', category: 'FOCUS', plannedDays: [2, 4, 6, 7], completionDates: [] },
   { id: 'weekly-sleep', title: 'Sleep on time', target: 5, unit: 'nights', category: 'FOCUS', plannedDays: [1, 2, 3, 4, 5], completionDates: [] },
 ];
@@ -345,6 +352,25 @@ export default function App() {
     setTab('log');
   }
 
+  function addGoalMilestone(goal: Goal) {
+    const today = dateKey(new Date());
+    const target = goal.dailyTarget ?? 1;
+    setGoals((current) =>
+      current.map((item) => {
+        if (item.id !== goal.id) return item;
+        const progress = item.progressByDate?.[today] ?? 0;
+        return {
+          ...item,
+          progressByDate: {
+            ...(item.progressByDate ?? {}),
+            [today]: Math.min(target, progress + 1),
+          },
+        };
+      }),
+    );
+    Haptics.selectionAsync();
+  }
+
   function publishPost(post: Post) {
     setPosts((current) => [post, ...current]);
     if (logWeeklyGoalId) {
@@ -385,7 +411,7 @@ export default function App() {
     }
     setLogGoal(null);
     setLogWeeklyGoalId(null);
-    setTab('feed');
+    setTab(post.shared === false ? 'today' : 'feed');
   }
 
   function react(postId: string, reaction: Reaction) {
@@ -435,6 +461,7 @@ export default function App() {
             weeklyGoals={weeklyGoals}
             onLog={openLog}
             onLogWeekly={openWeeklyLog}
+            onMilestone={addGoalMilestone}
           />
         )}
         {tab === 'feed' && (
@@ -580,12 +607,14 @@ function TodayScreen({
   weeklyGoals,
   onLog,
   onLogWeekly,
+  onMilestone,
 }: {
   user: User;
   goals: Goal[];
   weeklyGoals: WeeklyGoal[];
   onLog: (goal: Goal) => void;
   onLogWeekly: (goal: WeeklyGoal) => void;
+  onMilestone: (goal: Goal) => void;
 }) {
   const todayWeekday = new Date().getDay() || 7;
   const todayGoals = goals.filter((goal) =>
@@ -651,6 +680,9 @@ function TodayScreen({
         {todayGoals.map((goal, index) => {
           const colors = categoryColors[goal.category];
           const linkedWeeklyGoal = weeklyGoals.find((weeklyGoal) => weeklyGoal.id === goal.weeklyGoalId);
+          const milestoneTarget = goal.dailyTarget ?? 0;
+          const milestoneProgress = goal.progressByDate?.[today] ?? 0;
+          const milestoneReady = milestoneTarget > 1 && milestoneProgress >= milestoneTarget;
           return (
             <View
               key={goal.id}
@@ -676,6 +708,12 @@ function TodayScreen({
                     {[goal.detail, goal.location ? `⌖ ${goal.location}` : ''].filter(Boolean).join(' · ')}
                   </Text>
                 )}
+                {!!goal.bodyAreas?.length && (
+                  <Text style={styles.nativeGoalDetail}>{goal.bodyAreas.join(' · ')}</Text>
+                )}
+                {!!goal.calories && (
+                  <Text style={styles.nativeGoalDetail}>{goal.calories} kcal planned</Text>
+                )}
                 <Text style={[styles.nativeGoalCategory, { color: colors.accent }]}>
                   {linkedWeeklyGoal?.title ?? goal.category.toLowerCase()}
                   {goal.reminder?.enabled
@@ -683,7 +721,26 @@ function TodayScreen({
                     : ''}
                 </Text>
               </View>
-              {!goal.done && (
+              {!goal.done && milestoneTarget > 1 && !milestoneReady && (
+                <View style={styles.milestoneControl}>
+                  <Text style={[styles.milestoneCount, { color: colors.accent }]}>
+                    {milestoneProgress}/{milestoneTarget}
+                  </Text>
+                  <Text style={styles.milestoneUnit}>{goal.dailyUnit ?? 'steps'}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add one ${goal.dailyUnit ?? 'step'}`}
+                    style={[styles.milestoneAdd, { backgroundColor: colors.tint }]}
+                    onPress={() => onMilestone(goal)}>
+                    <SymbolView
+                      name={{ ios: 'plus', android: 'add', web: 'add' }}
+                      size={15}
+                      tintColor={colors.accent}
+                    />
+                  </Pressable>
+                </View>
+              )}
+              {!goal.done && (milestoneTarget <= 1 || milestoneReady) && (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`I did ${goal.title}. Take a selfie`}
@@ -698,7 +755,9 @@ function TodayScreen({
                     size={15}
                     tintColor={colors.accent}
                   />
-                  <Text style={[styles.nativeDoneText, { color: colors.accent }]}>Done</Text>
+                  <Text style={[styles.nativeDoneText, { color: colors.accent }]}>
+                    {milestoneReady ? 'Finish' : 'Done'}
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -818,6 +877,101 @@ function TodayScreen({
   );
 }
 
+function GoalsCalendar({ goals }: { goals: Goal[] }) {
+  const now = new Date();
+  const [month, setMonth] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
+  const [selectedKey, setSelectedKey] = useState(dateKey(now));
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const leadingBlanks = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
+  const cells: Array<Date | null> = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => new Date(year, monthIndex, index + 1)),
+  ];
+  while (cells.length % 7) cells.push(null);
+
+  const selectedDate = new Date(`${selectedKey}T12:00:00`);
+  const selectedWeekday = selectedDate.getDay() || 7;
+  const selectedGoals = goals.filter((goal) =>
+    (goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]).includes(selectedWeekday),
+  );
+  const selectedLabel = selectedDate.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+
+  function moveMonth(amount: number) {
+    const next = new Date(year, monthIndex + amount, 1);
+    setMonth(next);
+    setSelectedKey(dateKey(next));
+  }
+
+  return (
+    <View style={styles.goalsCalendarCard}>
+      <View style={styles.goalsCalendarHeader}>
+        <Text style={styles.goalsCalendarTitle}>
+          {month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+        </Text>
+        <View style={styles.goalsCalendarNav}>
+          <Pressable style={styles.calendarNavButton} onPress={() => moveMonth(-1)}>
+            <Text style={styles.calendarNavText}>‹</Text>
+          </Pressable>
+          <Pressable style={styles.calendarNavButton} onPress={() => moveMonth(1)}>
+            <Text style={styles.calendarNavText}>›</Text>
+          </Pressable>
+        </View>
+      </View>
+      <View style={styles.calendarGrid}>
+        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, index) => (
+          <Text key={`${label}-${index}`} style={styles.calendarWeekday}>{label}</Text>
+        ))}
+        {cells.map((date, index) => {
+          if (!date) return <View key={`blank-${index}`} style={styles.calendarDayCell} />;
+          const key = dateKey(date);
+          const weekday = date.getDay() || 7;
+          const planned = goals.some((goal) =>
+            (goal.plannedDays ?? []).includes(weekday),
+          );
+          const completed = goals.some((goal) => goal.completionDates?.includes(key));
+          const selected = key === selectedKey;
+          return (
+            <Pressable
+              key={key}
+              style={styles.calendarDayCell}
+              onPress={() => setSelectedKey(key)}>
+              <View
+                style={[
+                  styles.calendarDayCircle,
+                  selected && styles.calendarDaySelected,
+                  completed && styles.calendarDayCompleted,
+                ]}>
+                <Text
+                  style={[
+                    styles.calendarDayText,
+                    (selected || completed) && styles.calendarDayTextSelected,
+                  ]}>
+                  {date.getDate()}
+                </Text>
+              </View>
+              <View style={[styles.calendarPlanDot, planned && styles.calendarPlanDotActive]} />
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.calendarSelection}>
+        <Text style={styles.calendarSelectionDate}>{selectedLabel}</Text>
+        <Text style={styles.calendarSelectionGoals} numberOfLines={2}>
+          {selectedGoals.length
+            ? selectedGoals.map((goal) => goal.title).join(' · ')
+            : 'No goals planned'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 function GoalSettingsScreen({
   goals,
   weeklyGoals,
@@ -832,6 +986,10 @@ function GoalSettingsScreen({
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
   const [location, setLocation] = useState('');
+  const [bodyAreas, setBodyAreas] = useState<string[]>([]);
+  const [calories, setCalories] = useState('');
+  const [dailyTarget, setDailyTarget] = useState('');
+  const [dailyUnit, setDailyUnit] = useState('');
   const [weeklyGoalId, setWeeklyGoalId] = useState<string | null>(null);
   const [plannedDays, setPlannedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [weeklyTitle, setWeeklyTitle] = useState('');
@@ -848,6 +1006,10 @@ function GoalSettingsScreen({
     setTitle('');
     setDetail('');
     setLocation('');
+    setBodyAreas([]);
+    setCalories('');
+    setDailyTarget('');
+    setDailyUnit('');
     setWeeklyGoalId(null);
     setPlannedDays([1, 2, 3, 4, 5, 6, 7]);
     setReminder({ enabled: false, hour: 9, minute: 0 });
@@ -858,6 +1020,10 @@ function GoalSettingsScreen({
     setTitle(goal.title);
     setDetail(goal.detail ?? '');
     setLocation(goal.location ?? '');
+    setBodyAreas(goal.bodyAreas ?? []);
+    setCalories(goal.calories ? String(goal.calories) : '');
+    setDailyTarget(goal.dailyTarget ? String(goal.dailyTarget) : '');
+    setDailyUnit(goal.dailyUnit ?? '');
     setWeeklyGoalId(goal.weeklyGoalId ?? null);
     setPlannedDays(goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]);
     setReminder(goal.reminder ?? { enabled: false, hour: 9, minute: 0 });
@@ -946,6 +1112,12 @@ function GoalSettingsScreen({
     );
   }
 
+  function toggleBodyArea(area: string) {
+    setBodyAreas((current) =>
+      current.includes(area) ? current.filter((value) => value !== area) : [...current, area],
+    );
+  }
+
   function inferCategory(value: string): Goal['category'] {
     if (/walk|run|gym|workout|exercise|train|yoga|swim|cycle/i.test(value)) return 'MOVE';
     if (/meal|cook|food|water|eat|protein|vegetable/i.test(value)) return 'FUEL';
@@ -981,6 +1153,13 @@ function GoalSettingsScreen({
       title: cleanTitle,
       detail: detail.trim(),
       location: location.trim(),
+      bodyAreas,
+      calories: calories ? Math.max(0, Number.parseInt(calories, 10) || 0) : undefined,
+      dailyTarget: dailyTarget
+        ? Math.max(1, Number.parseInt(dailyTarget, 10) || 1)
+        : undefined,
+      dailyUnit: dailyTarget ? dailyUnit.trim() || 'times' : undefined,
+      progressByDate: original?.progressByDate,
       category: linkedWeeklyGoal?.category ?? inferCategory(cleanTitle),
       done: original?.done ?? false,
       completedDate: original?.completedDate,
@@ -1137,6 +1316,7 @@ function GoalSettingsScreen({
   if (editing) {
     const existing = editing === 'new' ? null : editing;
     const canSave = Boolean(title.trim() && weeklyGoalId && plannedDays.length);
+    const linkedCategory = weeklyGoals.find((goal) => goal.id === weeklyGoalId)?.category;
     return (
       <KeyboardAvoidingView
         style={styles.goalSettingsScreen}
@@ -1218,6 +1398,80 @@ function GoalSettingsScreen({
               );
             })}
           </ScrollView>
+
+          {linkedCategory === 'MOVE' && (
+            <>
+              <Text style={styles.settingsSectionLabel}>WORKOUT FOCUS · OPTIONAL</Text>
+              <View style={styles.bodyAreaCard}>
+                <View style={styles.bodyAreaIcon}>
+                  <SymbolView
+                    name={{ ios: 'figure.strengthtraining.traditional', android: 'fitness_center', web: 'fitness_center' }}
+                    size={28}
+                    tintColor={C.move}
+                  />
+                </View>
+                <View style={styles.bodyAreaChoices}>
+                  {['Full body', 'Chest', 'Back', 'Arms', 'Shoulders', 'Legs', 'Core'].map((area) => {
+                    const selected = bodyAreas.includes(area);
+                    return (
+                      <Pressable
+                        key={area}
+                        style={[styles.bodyAreaChoice, selected && styles.bodyAreaChoiceSelected]}
+                        onPress={() => toggleBodyArea(area)}>
+                        <Text style={[styles.bodyAreaChoiceText, selected && styles.bodyAreaChoiceTextSelected]}>
+                          {area}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            </>
+          )}
+
+          {linkedCategory === 'FUEL' && (
+            <>
+              <Text style={styles.settingsSectionLabel}>FOOD · OPTIONAL</Text>
+              <View style={styles.metricInputCard}>
+                <TextInput
+                  value={calories}
+                  onChangeText={setCalories}
+                  placeholder="Calories"
+                  placeholderTextColor={C.sage}
+                  keyboardType="number-pad"
+                  style={styles.metricNumberInput}
+                />
+                <Text style={styles.metricSuffix}>kcal</Text>
+              </View>
+            </>
+          )}
+
+          <Text style={styles.settingsSectionLabel}>DAILY MILESTONE · OPTIONAL</Text>
+          <View style={styles.dailyMetricCard}>
+            <View style={styles.dailyMetricField}>
+              <Text style={styles.weeklyFieldLabel}>AMOUNT</Text>
+              <TextInput
+                value={dailyTarget}
+                onChangeText={setDailyTarget}
+                placeholder="3"
+                placeholderTextColor={C.sage}
+                keyboardType="number-pad"
+                style={styles.dailyMetricInput}
+                maxLength={2}
+              />
+            </View>
+            <View style={styles.weeklyTargetDivider} />
+            <View style={[styles.dailyMetricField, styles.dailyMetricUnitField]}>
+              <Text style={styles.weeklyFieldLabel}>UNIT</Text>
+              <TextInput
+                value={dailyUnit}
+                onChangeText={setDailyUnit}
+                placeholder={linkedCategory === 'FOCUS' ? 'hours' : linkedCategory === 'FUEL' ? 'bottles' : 'sets'}
+                placeholderTextColor={C.sage}
+                style={styles.dailyMetricInput}
+              />
+            </View>
+          </View>
 
           <Text style={styles.settingsSectionLabel}>SHOW ON</Text>
           <View style={styles.dailyScheduleCard}>
@@ -1308,6 +1562,9 @@ function GoalSettingsScreen({
         <Text style={styles.newGoalText}>Set a new goal</Text>
       </Pressable>
 
+      <Text style={styles.goalHubSection}>Goal calendar</Text>
+      <GoalsCalendar goals={goals} />
+
       <Text style={styles.goalHubSection}>Current daily goals</Text>
       <View style={styles.nativeList}>
         {goals.map((goal, index) => {
@@ -1327,6 +1584,15 @@ function GoalSettingsScreen({
                 {!!(goal.detail || goal.location) && (
                   <Text style={styles.nativeGoalDetail}>
                     {[goal.detail, goal.location].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
+                {!!(goal.bodyAreas?.length || goal.calories || goal.dailyTarget) && (
+                  <Text style={styles.nativeGoalDetail}>
+                    {[
+                      goal.bodyAreas?.join(', '),
+                      goal.calories ? `${goal.calories} kcal` : '',
+                      goal.dailyTarget ? `${goal.dailyTarget} ${goal.dailyUnit ?? 'times'}` : '',
+                    ].filter(Boolean).join(' · ')}
                   </Text>
                 )}
                 <Text style={styles.nativeGoalCategory}>
@@ -1481,7 +1747,7 @@ function FeedScreen({
         <Pressable style={styles.filterActive}><Text style={styles.filterActiveText}>Friends</Text></Pressable>
         <Pressable style={styles.filterInactive}><Text style={styles.filterText}>Mine</Text></Pressable>
       </View>
-      {posts.map((post) => (
+      {posts.filter((post) => post.shared !== false).map((post) => (
         <View key={post.id} style={styles.postCard}>
           <View style={styles.postHeader}>
             <View style={[styles.avatar, { backgroundColor: post.avatarColor }]}>
@@ -1554,6 +1820,7 @@ function LogScreen({
   const initial = selectedGoal ?? goals.find((goal) => !goal.done) ?? goals[0];
   const [photo, setPhoto] = useState<string | null>(null);
   const [mood, setMood] = useState<(typeof moodOptions)[number]['id'] | null>(null);
+  const [shareWithFriends, setShareWithFriends] = useState(true);
   const activeGoal = initial;
 
   async function takeSelfie() {
@@ -1592,6 +1859,7 @@ function LogScreen({
       duration: 'Completed today',
       reactions: { heart: 0, kudos: 0 },
       mine: true,
+      shared: shareWithFriends,
     });
   }
 
@@ -1644,11 +1912,33 @@ function LogScreen({
           </Pressable>
         ))}
       </View>
+      <View style={styles.shareChoiceCard}>
+        <View style={styles.shareChoiceCopy}>
+          <Text style={styles.shareChoiceTitle}>Share with friends</Text>
+          <Text style={styles.shareChoiceText}>
+            {shareWithFriends
+              ? 'Friends can see this selfie and send encouragement.'
+              : 'Only you will see this completion in your history.'}
+          </Text>
+        </View>
+        <Switch
+          value={shareWithFriends}
+          onValueChange={setShareWithFriends}
+          trackColor={{ false: '#D1D1D6', true: '#9A9CF5' }}
+          thumbColor={C.white}
+        />
+      </View>
       <Pressable disabled={!ready} style={[styles.shareButton, !ready && styles.disabled]} onPress={share}>
-        <Text style={styles.shareButtonText}>Complete & share</Text>
+        <Text style={styles.shareButtonText}>
+          {shareWithFriends ? 'Complete & share' : 'Complete privately'}
+        </Text>
         <Text style={styles.shareButtonText}>→</Text>
       </Pressable>
-      <Text style={styles.shareNote}>Shared with friends only. They can respond with hearts and kudos.</Text>
+      <Text style={styles.shareNote}>
+        {shareWithFriends
+          ? 'Shared with friends only. They can respond with hearts and kudos.'
+          : 'Private completion. Nothing will be posted to Community.'}
+      </Text>
     </ScrollView>
   );
 }
@@ -2167,6 +2457,10 @@ const styles = StyleSheet.create({
   nativeGoalCategory: { color: C.muted, fontSize: 12, marginTop: 3, textTransform: 'capitalize' },
   nativeDoneButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.blush, borderRadius: 17, paddingHorizontal: 12 },
   nativeDoneText: { color: C.coral, fontSize: 13, fontWeight: '600' },
+  milestoneControl: { alignItems: 'center', minWidth: 58 },
+  milestoneCount: { fontSize: 15, fontWeight: '800' },
+  milestoneUnit: { color: C.muted, fontSize: 9, marginTop: 1, marginBottom: 5, maxWidth: 62 },
+  milestoneAdd: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   nativePressed: { opacity: 0.55 },
   noGoalsToday: { minHeight: 92, justifyContent: 'center', paddingRight: 16 },
   noGoalsTodayTitle: { color: C.inkDark, fontSize: 15, fontWeight: '700' },
@@ -2224,6 +2518,20 @@ const styles = StyleSheet.create({
   dailyScheduleDay: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   dailyScheduleDayText: { color: C.muted, fontSize: 11, fontWeight: '700' },
   dailyScheduleHint: { color: C.muted, fontSize: 11, marginTop: 12 },
+  bodyAreaCard: { backgroundColor: C.paper, borderRadius: 12, flexDirection: 'row', padding: 14, gap: 14, marginBottom: 28 },
+  bodyAreaIcon: { width: 54, minHeight: 100, borderRadius: 12, backgroundColor: C.moveTint, alignItems: 'center', justifyContent: 'center' },
+  bodyAreaChoices: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  bodyAreaChoice: { minHeight: 31, borderRadius: 16, backgroundColor: C.cream, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  bodyAreaChoiceSelected: { backgroundColor: C.move },
+  bodyAreaChoiceText: { color: C.muted, fontSize: 11, fontWeight: '600' },
+  bodyAreaChoiceTextSelected: { color: C.white },
+  metricInputCard: { minHeight: 58, borderRadius: 12, backgroundColor: C.paper, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 28 },
+  metricNumberInput: { flex: 1, color: C.inkDark, fontSize: 17, fontWeight: '600' },
+  metricSuffix: { color: C.muted, fontSize: 13 },
+  dailyMetricCard: { minHeight: 76, backgroundColor: C.paper, borderRadius: 12, flexDirection: 'row', paddingHorizontal: 16, marginBottom: 28 },
+  dailyMetricField: { width: 92, justifyContent: 'center' },
+  dailyMetricUnitField: { flex: 1, width: undefined, paddingLeft: 16 },
+  dailyMetricInput: { color: C.inkDark, fontSize: 17, fontWeight: '600', paddingVertical: 3 },
   simpleAlarmRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   deleteGoalButton: { minHeight: 50, alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper, borderRadius: 12 },
   deleteGoalText: { color: '#D23B3B', fontSize: 15, fontWeight: '600' },
@@ -2233,6 +2541,25 @@ const styles = StyleSheet.create({
   newGoalIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,.18)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   newGoalText: { color: C.white, fontSize: 17, fontWeight: '700' },
   goalHubSection: { color: C.inkDark, fontSize: 17, fontWeight: '700', marginLeft: 4, marginBottom: 10 },
+  goalsCalendarCard: { backgroundColor: C.paper, borderRadius: 16, padding: 16, marginBottom: 28 },
+  goalsCalendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  goalsCalendarTitle: { color: C.inkDark, fontSize: 16, fontWeight: '700' },
+  goalsCalendarNav: { flexDirection: 'row', gap: 7 },
+  calendarNavButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.cream, alignItems: 'center', justifyContent: 'center' },
+  calendarNavText: { color: C.coral, fontSize: 21, lineHeight: 23, fontWeight: '600' },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarWeekday: { width: '14.285%', color: C.muted, fontSize: 9, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
+  calendarDayCell: { width: '14.285%', height: 43, alignItems: 'center' },
+  calendarDayCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  calendarDaySelected: { backgroundColor: C.focus },
+  calendarDayCompleted: { backgroundColor: C.move },
+  calendarDayText: { color: C.inkDark, fontSize: 11, fontWeight: '600' },
+  calendarDayTextSelected: { color: C.white },
+  calendarPlanDot: { width: 3, height: 3, borderRadius: 2, marginTop: 3, backgroundColor: 'transparent' },
+  calendarPlanDotActive: { backgroundColor: C.coral },
+  calendarSelection: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line, paddingTop: 12, marginTop: 4 },
+  calendarSelectionDate: { color: C.inkDark, fontSize: 12, fontWeight: '700' },
+  calendarSelectionGoals: { color: C.muted, fontSize: 11, lineHeight: 16, marginTop: 3 },
   goalHubSectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   goalHubSectionInRow: { marginBottom: 0 },
   addWeeklyButton: { minHeight: 32, borderRadius: 16, backgroundColor: C.blush, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10 },
@@ -2408,6 +2735,10 @@ const styles = StyleSheet.create({
   moodFace: { fontSize: 27 },
   moodLabel: { color: C.muted, fontSize: 8, fontWeight: '800' },
   moodLabelActive: { color: C.coral },
+  shareChoiceCard: { backgroundColor: C.paper, borderRadius: 12, flexDirection: 'row', alignItems: 'center', padding: 16, marginTop: 22 },
+  shareChoiceCopy: { flex: 1, paddingRight: 14 },
+  shareChoiceTitle: { color: C.inkDark, fontSize: 14, fontWeight: '700' },
+  shareChoiceText: { color: C.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
   shareButton: { height: 56, marginTop: 22, backgroundColor: C.coral, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   shareButtonText: { color: C.white, fontSize: 13, fontWeight: '900' },
   shareNote: { color: C.muted, textAlign: 'center', fontSize: 9, lineHeight: 15, marginTop: 10 },

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
@@ -719,8 +719,7 @@ function GoalSettingsScreen({
                       value={timeAsDate(goal.reminder)}
                       mode="time"
                       display={Platform.OS === 'ios' ? 'compact' : 'default'}
-                      onChange={(event, date) => {
-                        if (event.type === 'dismissed' || !date) return;
+                      onValueChange={(_event, date) => {
                         updateGoal(goal.id, {
                           reminder: {
                             ...goal.reminder!,
@@ -1296,9 +1295,7 @@ function RemindersScreen({ onBack }: { onBack: () => void }) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
-  async function changeTime(name: ReminderName, event: DateTimePickerEvent, date?: Date) {
-    if (Platform.OS === 'android') setEditing(null);
-    if (event.type === 'dismissed' || !date) return;
+  async function changeTime(name: ReminderName, date: Date) {
     const current = reminders[name];
     if (current.notificationId) {
       await Notifications.cancelScheduledNotificationAsync(current.notificationId);
@@ -1353,7 +1350,10 @@ function RemindersScreen({ onBack }: { onBack: () => void }) {
             value={timeAsDate(reminders[editing])}
             mode="time"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={(event, date) => changeTime(editing, event, date)}
+            onValueChange={(_event, date) => changeTime(editing, date)}
+            onDismiss={() => {
+              if (Platform.OS === 'android') setEditing(null);
+            }}
             accentColor={C.coral}
           />
           {Platform.OS === 'ios' && (

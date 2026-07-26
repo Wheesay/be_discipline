@@ -73,6 +73,7 @@ type Goal = {
   completionDates?: string[];
   weeklyGoalId?: string;
   plannedDays?: number[];
+  location?: string;
   reminder?: GoalReminder;
 };
 
@@ -123,8 +124,8 @@ type Post = {
 };
 
 const starterGoals: Goal[] = [
-  { id: 'g1', title: 'Strength training', detail: '45 min · Upper body', category: 'MOVE', done: false, weeklyGoalId: 'weekly-exercise', plannedDays: [1, 3, 5] },
-  { id: 'g2', title: 'Cook a balanced dinner', detail: 'Protein + greens', category: 'FUEL', done: false, weeklyGoalId: 'weekly-meals', plannedDays: [2, 4, 6] },
+  { id: 'g1', title: 'Weight training', detail: 'Upper body', location: 'Home', category: 'MOVE', done: false, weeklyGoalId: 'weekly-exercise', plannedDays: [1, 3, 5] },
+  { id: 'g2', title: 'Cook a balanced dinner', detail: 'Protein + greens', location: 'Home', category: 'FUEL', done: false, weeklyGoalId: 'weekly-meals', plannedDays: [2, 4, 6] },
   { id: 'g3', title: 'Evening walk', detail: '30 min · Phone stays home', category: 'MOVE', done: false, weeklyGoalId: 'weekly-exercise', plannedDays: [7] },
 ];
 
@@ -185,6 +186,7 @@ const starterWeeklyGoals: WeeklyGoal[] = [
 const weeklyGoalIdeas: WeeklyGoal[] = [
   { id: 'weekly-walks', title: 'Go for a walk', target: 4, unit: 'days', category: 'MOVE', plannedDays: [1, 3, 5, 7], completionDates: [] },
   { id: 'weekly-water', title: 'Drink enough water', target: 7, unit: 'days', category: 'FUEL', plannedDays: [1, 2, 3, 4, 5, 6, 7], completionDates: [] },
+  { id: 'weekly-cheat', title: 'Cheat day', target: 1, unit: 'day', category: 'FUEL', plannedDays: [7], completionDates: [] },
   { id: 'weekly-read', title: 'Read for 20 minutes', target: 4, unit: 'days', category: 'FOCUS', plannedDays: [2, 4, 6, 7], completionDates: [] },
   { id: 'weekly-sleep', title: 'Sleep on time', target: 5, unit: 'nights', category: 'FOCUS', plannedDays: [1, 2, 3, 4, 5], completionDates: [] },
 ];
@@ -669,6 +671,11 @@ function TodayScreen({
               </View>
               <View style={styles.nativeGoalCopy}>
                 <Text style={[styles.nativeGoalTitle, goal.done && styles.nativeGoalTitleDone]}>{goal.title}</Text>
+                {!!(goal.detail || goal.location) && (
+                  <Text style={styles.nativeGoalDetail}>
+                    {[goal.detail, goal.location ? `⌖ ${goal.location}` : ''].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
                 <Text style={[styles.nativeGoalCategory, { color: colors.accent }]}>
                   {linkedWeeklyGoal?.title ?? goal.category.toLowerCase()}
                   {goal.reminder?.enabled
@@ -821,9 +828,16 @@ function GoalSettingsScreen({
   onSave: (goals: Goal[], weeklyGoals: WeeklyGoal[]) => void;
 }) {
   const [editing, setEditing] = useState<Goal | 'new' | null>(null);
+  const [editingWeekly, setEditingWeekly] = useState<WeeklyGoal | 'new' | null>(null);
   const [title, setTitle] = useState('');
+  const [detail, setDetail] = useState('');
+  const [location, setLocation] = useState('');
   const [weeklyGoalId, setWeeklyGoalId] = useState<string | null>(null);
   const [plannedDays, setPlannedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
+  const [weeklyTitle, setWeeklyTitle] = useState('');
+  const [weeklyTarget, setWeeklyTarget] = useState('1');
+  const [weeklyUnit, setWeeklyUnit] = useState('times');
+  const [weeklyCategory, setWeeklyCategory] = useState<Goal['category']>('MOVE');
   const [reminder, setReminder] = useState<GoalReminder>({
     enabled: false,
     hour: 9,
@@ -832,6 +846,8 @@ function GoalSettingsScreen({
 
   function beginNewGoal() {
     setTitle('');
+    setDetail('');
+    setLocation('');
     setWeeklyGoalId(null);
     setPlannedDays([1, 2, 3, 4, 5, 6, 7]);
     setReminder({ enabled: false, hour: 9, minute: 0 });
@@ -840,10 +856,86 @@ function GoalSettingsScreen({
 
   function beginEditGoal(goal: Goal) {
     setTitle(goal.title);
+    setDetail(goal.detail ?? '');
+    setLocation(goal.location ?? '');
     setWeeklyGoalId(goal.weeklyGoalId ?? null);
     setPlannedDays(goal.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]);
     setReminder(goal.reminder ?? { enabled: false, hour: 9, minute: 0 });
     setEditing(goal);
+  }
+
+  function beginNewWeeklyGoal() {
+    setWeeklyTitle('');
+    setWeeklyTarget('1');
+    setWeeklyUnit('times');
+    setWeeklyCategory('MOVE');
+    setEditingWeekly('new');
+  }
+
+  function beginEditWeeklyGoal(goal: WeeklyGoal) {
+    setWeeklyTitle(goal.title);
+    setWeeklyTarget(String(goal.target));
+    setWeeklyUnit(goal.unit);
+    setWeeklyCategory(goal.category);
+    setEditingWeekly(goal);
+  }
+
+  function saveWeeklyGoal() {
+    const cleanTitle = weeklyTitle.trim();
+    const target = Math.max(1, Math.min(99, Number.parseInt(weeklyTarget, 10) || 1));
+    const cleanUnit = weeklyUnit.trim() || 'times';
+    if (!cleanTitle) return;
+    const original = editingWeekly === 'new' ? null : editingWeekly;
+    const saved: WeeklyGoal = {
+      id: original?.id ?? `weekly-${Date.now()}`,
+      title: cleanTitle,
+      target,
+      unit: cleanUnit,
+      category: weeklyCategory,
+      plannedDays: original?.plannedDays ?? [],
+      completionDates: original?.completionDates ?? [],
+    };
+    const nextWeeklyGoals = original
+      ? weeklyGoals.map((goal) => (goal.id === original.id ? saved : goal))
+      : [...weeklyGoals, saved];
+    const nextGoals = original
+      ? goals.map((goal) =>
+          goal.weeklyGoalId === original.id ? { ...goal, category: weeklyCategory } : goal,
+        )
+      : goals;
+    onSave(nextGoals, nextWeeklyGoals);
+    setEditingWeekly(null);
+  }
+
+  function deleteWeeklyGoal(goal: WeeklyGoal) {
+    const linkedGoals = goals.filter((dailyGoal) => dailyGoal.weeklyGoalId === goal.id);
+    Alert.alert(
+      `Delete ${goal.title}?`,
+      linkedGoals.length
+        ? `This will also delete ${linkedGoals.length} linked daily ${linkedGoals.length === 1 ? 'goal' : 'goals'}.`
+        : 'Its previous progress will also be removed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const reminderIds = linkedGoals.flatMap((dailyGoal) =>
+              dailyGoal.reminder?.notificationIds ??
+              (dailyGoal.reminder?.notificationId ? [dailyGoal.reminder.notificationId] : []),
+            );
+            await Promise.all(
+              reminderIds.map((id) => Notifications.cancelScheduledNotificationAsync(id)),
+            );
+            onSave(
+              goals.filter((dailyGoal) => dailyGoal.weeklyGoalId !== goal.id),
+              weeklyGoals.filter((weeklyGoal) => weeklyGoal.id !== goal.id),
+            );
+            setEditingWeekly(null);
+          },
+        },
+      ],
+    );
   }
 
   function toggleDailyDay(day: number) {
@@ -874,6 +966,8 @@ function GoalSettingsScreen({
       reminder.enabled &&
       original.reminder.hour === reminder.hour &&
       original.reminder.minute === reminder.minute &&
+      original.title === cleanTitle &&
+      (original.detail ?? '') === detail.trim() &&
       JSON.stringify(original.plannedDays ?? [1, 2, 3, 4, 5, 6, 7]) === JSON.stringify(plannedDays);
 
     if (originalReminderIds.length && !reminderUnchanged) {
@@ -885,7 +979,8 @@ function GoalSettingsScreen({
     const nextGoal: Goal = {
       id: original?.id ?? `goal-${Date.now()}`,
       title: cleanTitle,
-      detail: '',
+      detail: detail.trim(),
+      location: location.trim(),
       category: linkedWeeklyGoal?.category ?? inferCategory(cleanTitle),
       done: original?.done ?? false,
       completedDate: original?.completedDate,
@@ -926,16 +1021,117 @@ function GoalSettingsScreen({
     setEditing(null);
   }
 
-  function changeWeeklyTarget(id: string, amount: number) {
-    const nextWeekly = weeklyGoals.map((goal) =>
-      goal.id === id ? { ...goal, target: Math.max(1, Math.min(14, goal.target + amount)) } : goal,
-    );
-    onSave(goals, nextWeekly);
-  }
-
   function addWeeklyGoal(idea: WeeklyGoal) {
     if (weeklyGoals.some((goal) => goal.id === idea.id)) return;
     onSave(goals, [...weeklyGoals, idea]);
+  }
+
+  if (editingWeekly) {
+    const existing = editingWeekly === 'new' ? null : editingWeekly;
+    const canSaveWeekly = Boolean(weeklyTitle.trim() && weeklyUnit.trim());
+    return (
+      <KeyboardAvoidingView
+        style={styles.goalSettingsScreen}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.settingsNav}>
+          <Pressable accessibilityRole="button" onPress={() => setEditingWeekly(null)}>
+            <Text style={styles.settingsNavAction}>Cancel</Text>
+          </Pressable>
+          <Text style={styles.settingsNavTitle}>
+            {existing ? 'Edit weekly goal' : 'New weekly goal'}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canSaveWeekly}
+            onPress={saveWeeklyGoal}>
+            <Text
+              style={[
+                styles.settingsNavAction,
+                styles.settingsSave,
+                !canSaveWeekly && styles.disabled,
+              ]}>
+              Save
+            </Text>
+          </Pressable>
+        </View>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.singleGoalContent}>
+          <Text style={styles.settingsSectionLabel}>WEEKLY OUTCOME</Text>
+          <View style={styles.weeklyEditorCard}>
+            <TextInput
+              value={weeklyTitle}
+              onChangeText={setWeeklyTitle}
+              placeholder="Exercise"
+              placeholderTextColor={C.sage}
+              style={styles.weeklyEditorTitle}
+              autoFocus
+            />
+            <View style={styles.weeklyEditorDivider} />
+            <View style={styles.weeklyTargetFields}>
+              <View style={styles.weeklyTargetField}>
+                <Text style={styles.weeklyFieldLabel}>TARGET</Text>
+                <TextInput
+                  value={weeklyTarget}
+                  onChangeText={setWeeklyTarget}
+                  keyboardType="number-pad"
+                  style={styles.weeklyTargetInput}
+                  maxLength={2}
+                />
+              </View>
+              <View style={styles.weeklyTargetDivider} />
+              <View style={[styles.weeklyTargetField, styles.weeklyUnitField]}>
+                <Text style={styles.weeklyFieldLabel}>UNIT</Text>
+                <TextInput
+                  value={weeklyUnit}
+                  onChangeText={setWeeklyUnit}
+                  placeholder="times"
+                  placeholderTextColor={C.sage}
+                  style={styles.weeklyTargetInput}
+                />
+              </View>
+            </View>
+          </View>
+
+          <Text style={styles.settingsSectionLabel}>TYPE</Text>
+          <View style={styles.weeklyCategoryChoices}>
+            {(['MOVE', 'FUEL', 'FOCUS'] as const).map((category) => {
+              const colors = categoryColors[category];
+              const selected = weeklyCategory === category;
+              return (
+                <Pressable
+                  key={category}
+                  style={[
+                    styles.weeklyCategoryChoice,
+                    selected && { backgroundColor: colors.accent },
+                  ]}
+                  onPress={() => setWeeklyCategory(category)}>
+                  <Text
+                    style={[
+                      styles.weeklyCategoryChoiceText,
+                      selected && styles.weeklyCategoryChoiceTextSelected,
+                    ]}>
+                    {category === 'MOVE' ? 'Exercise' : category === 'FUEL' ? 'Food' : 'Personal'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.weeklyEditorNote}>
+            <Text style={styles.weeklyEditorNoteText}>
+              After saving, create daily goals and choose which days contribute to this target.
+            </Text>
+          </View>
+
+          {existing && (
+            <Pressable style={styles.deleteGoalButton} onPress={() => deleteWeeklyGoal(existing)}>
+              <Text style={styles.deleteGoalText}>Delete weekly goal</Text>
+            </Pressable>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
   }
 
   if (editing) {
@@ -964,10 +1160,28 @@ function GoalSettingsScreen({
             <TextInput
               value={title}
               onChangeText={setTitle}
-              placeholder="30 minute walk"
+              placeholder="Weight training"
               placeholderTextColor={C.sage}
               style={styles.singleGoalInput}
               autoFocus
+              returnKeyType="next"
+            />
+            <View style={styles.singleGoalDivider} />
+            <TextInput
+              value={detail}
+              onChangeText={setDetail}
+              placeholder="What counts as done? e.g. Arms or 3 bottles"
+              placeholderTextColor={C.sage}
+              style={styles.singleGoalSecondaryInput}
+              returnKeyType="next"
+            />
+            <View style={styles.singleGoalDivider} />
+            <TextInput
+              value={location}
+              onChangeText={setLocation}
+              placeholder="Location (optional), e.g. Home or Office (CMPB)"
+              placeholderTextColor={C.sage}
+              style={styles.singleGoalSecondaryInput}
               returnKeyType="done"
             />
           </View>
@@ -1110,6 +1324,11 @@ function GoalSettingsScreen({
               <View style={[styles.goalHubDot, { backgroundColor: colors.accent }]} />
               <View style={styles.nativeGoalCopy}>
                 <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
+                {!!(goal.detail || goal.location) && (
+                  <Text style={styles.nativeGoalDetail}>
+                    {[goal.detail, goal.location].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
                 <Text style={styles.nativeGoalCategory}>
                   {linked?.title ?? 'Not linked'} · {dayLabels}
                   {goal.reminder?.enabled
@@ -1123,7 +1342,13 @@ function GoalSettingsScreen({
         })}
       </View>
 
-      <Text style={styles.goalHubSection}>Current weekly goals</Text>
+      <View style={styles.goalHubSectionRow}>
+        <Text style={[styles.goalHubSection, styles.goalHubSectionInRow]}>Current weekly goals</Text>
+        <Pressable style={styles.addWeeklyButton} onPress={beginNewWeeklyGoal}>
+          <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={C.coral} />
+          <Text style={styles.addWeeklyButtonText}>New weekly goal</Text>
+        </Pressable>
+      </View>
       <View style={styles.weeklyPlanList}>
         {weeklyGoals.map((goal) => {
           const colors = categoryColors[goal.category];
@@ -1138,15 +1363,17 @@ function GoalSettingsScreen({
                 <Text style={styles.nativeGoalTitle}>{goal.title}</Text>
                 <Text style={styles.nativeGoalCategory}>{goal.target} {goal.unit} per week</Text>
               </View>
-              <View style={styles.stepper}>
-                <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, -1)}>
-                  <SymbolView name={{ ios: 'minus', android: 'remove', web: 'remove' }} size={14} tintColor={colors.accent} />
-                </Pressable>
-                <Text style={styles.stepperValue}>{goal.target}</Text>
-                <Pressable style={styles.stepperButton} onPress={() => changeWeeklyTarget(goal.id, 1)}>
-                  <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={14} tintColor={colors.accent} />
-                </Pressable>
-              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${goal.title}`}
+                style={[styles.weeklyEditButton, { backgroundColor: colors.tint }]}
+                onPress={() => beginEditWeeklyGoal(goal)}>
+                <SymbolView
+                  name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+                  size={15}
+                  tintColor={colors.accent}
+                />
+              </Pressable>
             </View>
             <Text style={styles.weeklyPlanLabel}>LINKED DAILY GOALS</Text>
             <Text style={styles.weeklyLinkedSummary}>
@@ -1971,6 +2198,23 @@ const styles = StyleSheet.create({
   singleGoalContent: { paddingHorizontal: 16, paddingTop: 28, paddingBottom: 40 },
   singleGoalCard: { backgroundColor: C.paper, borderRadius: 12, paddingHorizontal: 16, marginBottom: 28, overflow: 'hidden' },
   singleGoalInput: { minHeight: 56, color: C.inkDark, fontSize: 17 },
+  singleGoalSecondaryInput: { minHeight: 52, color: C.inkDark, fontSize: 14 },
+  singleGoalDivider: { height: StyleSheet.hairlineWidth, backgroundColor: C.line },
+  weeklyEditorCard: { backgroundColor: C.paper, borderRadius: 12, paddingHorizontal: 16, marginBottom: 28, overflow: 'hidden' },
+  weeklyEditorTitle: { minHeight: 58, color: C.inkDark, fontSize: 17, fontWeight: '600' },
+  weeklyEditorDivider: { height: StyleSheet.hairlineWidth, backgroundColor: C.line },
+  weeklyTargetFields: { minHeight: 78, flexDirection: 'row', alignItems: 'stretch' },
+  weeklyTargetField: { width: 92, justifyContent: 'center' },
+  weeklyUnitField: { flex: 1, width: undefined, paddingLeft: 16 },
+  weeklyTargetDivider: { width: StyleSheet.hairlineWidth, backgroundColor: C.line, marginVertical: 12 },
+  weeklyFieldLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 4 },
+  weeklyTargetInput: { color: C.inkDark, fontSize: 18, fontWeight: '700', paddingVertical: 3 },
+  weeklyCategoryChoices: { flexDirection: 'row', gap: 8, marginBottom: 28 },
+  weeklyCategoryChoice: { flex: 1, height: 42, borderRadius: 10, backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center' },
+  weeklyCategoryChoiceText: { color: C.muted, fontSize: 12, fontWeight: '700' },
+  weeklyCategoryChoiceTextSelected: { color: C.white },
+  weeklyEditorNote: { backgroundColor: C.focusTint, borderRadius: 12, padding: 14, marginBottom: 28 },
+  weeklyEditorNoteText: { color: C.focus, fontSize: 12, lineHeight: 17 },
   goalLinkChoices: { gap: 8, paddingRight: 16, marginBottom: 28 },
   goalLinkChoice: { width: 172, minHeight: 68, borderRadius: 12, borderWidth: 1.5, borderColor: 'transparent', backgroundColor: C.paper, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
   goalLinkTitle: { color: C.inkDark, fontSize: 14, fontWeight: '700' },
@@ -1989,11 +2233,16 @@ const styles = StyleSheet.create({
   newGoalIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,.18)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   newGoalText: { color: C.white, fontSize: 17, fontWeight: '700' },
   goalHubSection: { color: C.inkDark, fontSize: 17, fontWeight: '700', marginLeft: 4, marginBottom: 10 },
+  goalHubSectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  goalHubSectionInRow: { marginBottom: 0 },
+  addWeeklyButton: { minHeight: 32, borderRadius: 16, backgroundColor: C.blush, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10 },
+  addWeeklyButtonText: { color: C.coral, fontSize: 11, fontWeight: '700' },
   goalHubRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, paddingRight: 16 },
   goalHubDot: { width: 10, height: 10, borderRadius: 5, marginRight: 13 },
   weeklyPlanList: { gap: 10, marginBottom: 30 },
   weeklyPlanCard: { backgroundColor: C.paper, borderRadius: 14, paddingHorizontal: 16, paddingBottom: 15 },
   weeklyPlanTop: { minHeight: 66, flexDirection: 'row', alignItems: 'center' },
+  weeklyEditButton: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   weeklyPlanLabel: { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 9 },
   weeklyLinkedSummary: { color: C.inkDark, fontSize: 12, lineHeight: 17 },
   weeklyPlanDays: { flexDirection: 'row', justifyContent: 'space-between' },

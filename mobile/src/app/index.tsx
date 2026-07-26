@@ -364,64 +364,73 @@ function TodayScreen({
   onLog: (goal: Goal) => void;
 }) {
   const completed = goals.filter((goal) => goal.done).length;
+  const progress = `${(completed / goals.length) * 100}%` as `${number}%`;
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      <Header
-        label="THURSDAY · WEEK 31"
-        title={`Keep your word,\n${user.name.split(' ')[0]}.`}
-        action={<View style={styles.avatar}><Text style={styles.avatarText}>{initials(user.name)}</Text></View>}
-      />
-      <View style={styles.scoreCard}>
-        <View style={styles.scoreCircle}>
-          <Text style={styles.scoreValue}>{Math.round(((completed + 7) / (goals.length + 8)) * 100)}%</Text>
-          <Text style={styles.scoreLabel}>KEPT</Text>
+      <View style={styles.todayHeader}>
+        <View>
+          <Text style={styles.todayDate}>THURSDAY · WEEK 31</Text>
+          <Text style={styles.todayTitle}>Today</Text>
         </View>
-        <View style={styles.scoreCopy}>
-          <Text style={styles.scoreTitle}>One honest action at a time.</Text>
-          <Text style={styles.mutedText}>Complete a promise with photo proof to share it.</Text>
+        <View style={styles.avatar}><Text style={styles.avatarText}>{initials(user.name)}</Text></View>
+      </View>
+      <Text style={styles.todayGreeting}>Ready to show up, {user.name.split(' ')[0]}?</Text>
+      <View style={styles.todayProgress}>
+        <View style={styles.todayProgressCopy}>
+          <Text style={styles.todayProgressCount}>{completed} of {goals.length}</Text>
+          <Text style={styles.todayProgressLabel}>promises completed</Text>
         </View>
+        <Text style={styles.todayProgressPercent}>{Math.round((completed / goals.length) * 100)}%</Text>
+      </View>
+      <View style={styles.todayProgressTrack}>
+        <View style={[styles.todayProgressFill, { width: progress }]} />
       </View>
 
-      <View style={styles.sectionRow}>
-        <View><Text style={styles.eyebrow}>TODAY&apos;S CONTRACT</Text><Text style={styles.sectionTitle}>Your promises</Text></View>
-        <Text style={styles.sectionMeta}>{completed}/{goals.length} KEPT</Text>
-      </View>
-      <View style={styles.goalCard}>
-        {goals.map((goal, index) => (
-          <View key={goal.id} style={[styles.goalRow, index === goals.length - 1 && styles.noBorder]}>
-            <Text style={styles.goalIndex}>{String(index + 1).padStart(2, '0')}</Text>
-            <View style={styles.goalCopy}>
+      <Text style={styles.calmSectionTitle}>Your promises</Text>
+      <View style={styles.calmGoalList}>
+        {goals.map((goal) => (
+          <View key={goal.id} style={[styles.calmGoalCard, goal.done && styles.calmGoalDone]}>
+            <View style={styles.calmGoalTop}>
               <Text style={styles.goalCategory}>{goal.category}</Text>
-              <Text style={[styles.goalTitle, goal.done && styles.strike]}>{goal.title}</Text>
-              <Text style={styles.goalDetail}>{goal.detail}</Text>
+              {goal.done && <Text style={styles.completedBadge}>COMPLETED</Text>}
             </View>
+            <Text style={[styles.calmGoalTitle, goal.done && styles.calmGoalTitleDone]}>{goal.title}</Text>
             {goal.done ? (
-              <View style={styles.doneBox}><Text style={styles.doneCheck}>✓</Text></View>
+              <View style={styles.completedRow}>
+                <View style={styles.completedDot}><Text style={styles.completedCheck}>✓</Text></View>
+                <Text style={styles.completedText}>Promise kept</Text>
+              </View>
             ) : (
-              <Pressable style={styles.proofButton} onPress={() => onLog(goal)}>
-                <Text style={styles.proofIcon}>✓</Text>
-                <Text style={styles.proofText}>COMPLETE</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`I did ${goal.title}. Take a selfie`}
+                style={({ pressed }) => [styles.didItButton, pressed && styles.didItButtonPressed]}
+                onPress={() => onLog(goal)}>
+                <Text style={styles.didItCamera}>📷</Text>
+                <Text style={styles.didItText}>I did it — take selfie</Text>
               </Pressable>
             )}
           </View>
         ))}
       </View>
 
-      <Text style={[styles.eyebrow, { marginTop: 32 }]}>THIS WEEK</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekCards}>
-        <View style={styles.weekCard}>
-          <View style={styles.weekTop}><Text style={styles.weekIcon}>M</Text><Text style={styles.onTrack}>ON TRACK</Text></View>
-          <Text style={styles.weekTitle}>Exercise 4 times</Text>
-          <Text style={styles.weekNumber}>3 <Text style={styles.weekOutOf}>of 4 sessions</Text></Text>
-          <View style={styles.progress}><View style={[styles.progressFill, { width: '75%' }]} /></View>
+      <Text style={styles.calmSectionTitle}>This week</Text>
+      <View style={styles.weekPlan}>
+        <View style={styles.weekPlanRow}>
+          <View style={styles.weekPlanCopy}>
+            <Text style={styles.weekPlanTitle}>Exercise 4 times</Text>
+            <View style={styles.weekPlanTrack}><View style={[styles.weekPlanFill, { width: '75%' }]} /></View>
+          </View>
+          <Text style={styles.weekPlanCount}>3 / 4</Text>
         </View>
-        <View style={styles.weekCard}>
-          <View style={styles.weekTop}><Text style={[styles.weekIcon, { backgroundColor: C.coral }]}>F</Text><Text style={styles.attention}>NEEDS ATTENTION</Text></View>
-          <Text style={styles.weekTitle}>Cook 5 balanced meals</Text>
-          <Text style={styles.weekNumber}>2 <Text style={styles.weekOutOf}>of 5 meals</Text></Text>
-          <View style={styles.progress}><View style={[styles.progressFill, { width: '40%', backgroundColor: C.coral }]} /></View>
+        <View style={[styles.weekPlanRow, styles.weekPlanRowLast]}>
+          <View style={styles.weekPlanCopy}>
+            <Text style={styles.weekPlanTitle}>Cook 5 balanced meals</Text>
+            <View style={styles.weekPlanTrack}><View style={[styles.weekPlanFill, { width: '40%' }]} /></View>
+          </View>
+          <Text style={styles.weekPlanCount}>2 / 5</Text>
         </View>
-      </ScrollView>
+      </View>
     </ScrollView>
   );
 }
@@ -578,7 +587,7 @@ function LogScreen({
           </>
         ) : (
           <View style={styles.emptyPhoto}>
-            <View style={styles.cameraCircle}><Text style={styles.cameraIcon}>◎</Text></View>
+            <View style={styles.cameraCircle}><Text style={styles.cameraIcon}>📷</Text></View>
             <Text style={styles.photoTitle}>Take your completion selfie</Text>
             <Text style={styles.photoHint}>One tap. Your face is the proof.</Text>
             <View style={styles.photoActions}>
@@ -759,7 +768,7 @@ function ProfileScreen({
         ))
       ) : (
         <View style={styles.emptyProof}>
-          <Text style={styles.emptyProofIcon}>◎</Text>
+          <Text style={styles.emptyProofIcon}>📷</Text>
           <Text style={styles.emptyProofTitle}>Your proof will live here.</Text>
           <Text style={styles.emptyProofText}>Complete an activity and share your first photo.</Text>
         </View>
@@ -999,9 +1008,9 @@ function formatTime(hour: number, minute: number) {
 
 function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }) {
   const items: { id: Tab; icon: string; label: string }[] = [
-    { id: 'today', icon: '✓', label: 'Today' },
+    { id: 'today', icon: '●', label: 'Today' },
     { id: 'feed', icon: '◫', label: 'Feed' },
-    { id: 'log', icon: '✓', label: 'Complete' },
+    { id: 'log', icon: '📷', label: 'Proof' },
     { id: 'friends', icon: '♧', label: 'Friends' },
     { id: 'profile', icon: '○', label: 'Me' },
   ];
@@ -1067,6 +1076,41 @@ const styles = StyleSheet.create({
   avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.ink },
   avatarText: { color: C.ink, fontSize: 11, fontWeight: '900' },
   avatarTextLight: { color: C.white, fontSize: 11, fontWeight: '900' },
+  todayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
+  todayDate: { color: C.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
+  todayTitle: { color: C.inkDark, fontSize: 34, fontWeight: '800', letterSpacing: -1.1 },
+  todayGreeting: { color: C.inkDark, fontSize: 19, fontWeight: '700', marginBottom: 22 },
+  todayProgress: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  todayProgressCopy: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  todayProgressCount: { color: C.inkDark, fontSize: 14, fontWeight: '900' },
+  todayProgressLabel: { color: C.muted, fontSize: 11 },
+  todayProgressPercent: { color: C.ink, fontSize: 12, fontWeight: '900' },
+  todayProgressTrack: { height: 7, borderRadius: 4, backgroundColor: '#E3E4DE', marginTop: 10, marginBottom: 34, overflow: 'hidden' },
+  todayProgressFill: { height: '100%', borderRadius: 4, backgroundColor: C.coral },
+  calmSectionTitle: { color: C.inkDark, fontSize: 20, fontWeight: '800', letterSpacing: -0.4, marginBottom: 14 },
+  calmGoalList: { gap: 12, marginBottom: 32 },
+  calmGoalCard: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, borderRadius: 14, padding: 16 },
+  calmGoalDone: { backgroundColor: '#F0F1EC' },
+  calmGoalTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  completedBadge: { color: C.ink, fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  calmGoalTitle: { color: C.inkDark, fontSize: 17, fontWeight: '800', marginBottom: 16 },
+  calmGoalTitleDone: { color: C.muted },
+  didItButton: { minHeight: 50, borderRadius: 10, backgroundColor: C.ink, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  didItButtonPressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
+  didItCamera: { color: C.white, fontSize: 22, fontWeight: '600' },
+  didItText: { color: C.white, fontSize: 13, fontWeight: '900' },
+  completedRow: { minHeight: 46, borderRadius: 10, backgroundColor: '#E1E8DF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  completedDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+  completedCheck: { color: C.white, fontSize: 12, fontWeight: '900' },
+  completedText: { color: C.ink, fontSize: 12, fontWeight: '800' },
+  weekPlan: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, borderRadius: 14, paddingHorizontal: 16 },
+  weekPlanRow: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 16, borderBottomWidth: 1, borderBottomColor: C.line },
+  weekPlanRowLast: { borderBottomWidth: 0 },
+  weekPlanCopy: { flex: 1 },
+  weekPlanTitle: { color: C.inkDark, fontSize: 13, fontWeight: '800', marginBottom: 10 },
+  weekPlanTrack: { height: 5, borderRadius: 3, backgroundColor: '#E3E4DE', overflow: 'hidden' },
+  weekPlanFill: { height: '100%', borderRadius: 3, backgroundColor: C.coral },
+  weekPlanCount: { color: C.ink, fontSize: 12, fontWeight: '900' },
   scoreCard: { backgroundColor: C.ink, padding: 22, flexDirection: 'row', alignItems: 'center', gap: 20, marginBottom: 34 },
   scoreCircle: { width: 82, height: 82, borderRadius: 41, borderWidth: 7, borderColor: C.coral, alignItems: 'center', justifyContent: 'center' },
   scoreValue: { color: C.white, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 22 },

@@ -399,8 +399,8 @@ function TodayScreen({
               <View style={styles.doneBox}><Text style={styles.doneCheck}>✓</Text></View>
             ) : (
               <Pressable style={styles.proofButton} onPress={() => onLog(goal)}>
-                <Text style={styles.proofIcon}>＋</Text>
-                <Text style={styles.proofText}>LOG</Text>
+                <Text style={styles.proofIcon}>✓</Text>
+                <Text style={styles.proofText}>COMPLETE</Text>
               </Pressable>
             )}
           </View>
@@ -497,6 +497,14 @@ function FeedScreen({
   );
 }
 
+const moodOptions = [
+  { id: 'tough', face: '😣', label: 'Tough', caption: 'It was tough, but I showed up.' },
+  { id: 'hard', face: '😕', label: 'Hard', caption: 'Hard today. Still completed.' },
+  { id: 'okay', face: '😐', label: 'Okay', caption: 'Done. One promise kept.' },
+  { id: 'good', face: '🙂', label: 'Good', caption: 'Felt good to follow through.' },
+  { id: 'great', face: '😄', label: 'Great', caption: 'Felt great. Glad I showed up.' },
+] as const;
+
 function LogScreen({
   user,
   selectedGoal,
@@ -509,30 +517,31 @@ function LogScreen({
   onPublish: (post: Post) => void;
 }) {
   const initial = selectedGoal ?? goals.find((goal) => !goal.done) ?? goals[0];
-  const [goalId, setGoalId] = useState(initial.id);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [caption, setCaption] = useState('');
-  const [duration, setDuration] = useState('');
-  const activeGoal = goals.find((goal) => goal.id === goalId) ?? initial;
+  const [mood, setMood] = useState<(typeof moodOptions)[number]['id'] | null>(null);
+  const activeGoal = initial;
 
-  async function choosePhoto(source: 'camera' | 'library') {
-    if (source === 'camera') {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Camera permission needed', 'Allow camera access to capture proof of your activity.');
-        return;
-      }
+  async function takeSelfie() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera permission needed', 'Allow camera access to take your completion selfie.');
+      return;
     }
-    const result =
-      source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: true,
+      aspect: [1, 1],
+      cameraType: ImagePicker.CameraType.front,
+    });
     if (!result.canceled) setPhoto(result.assets[0].uri);
   }
 
-  const ready = Boolean(photo && caption.trim());
+  const ready = Boolean(photo && mood);
   function share() {
     if (!ready) return;
+    const selectedMood = moodOptions.find((option) => option.id === mood);
+    if (!selectedMood) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onPublish({
       id: `mine-${Date.now()}`,
@@ -542,10 +551,10 @@ function LogScreen({
       avatarColor: C.ink,
       activity: activeGoal.title,
       category: activeGoal.category,
-      caption: caption.trim(),
+      caption: selectedMood.caption,
       image: photo ?? undefined,
       time: 'Just now',
-      duration: duration.trim() || activeGoal.detail,
+      duration: 'Completed today',
       reactions: { heart: 0, kudos: 0 },
       mine: true,
     });
@@ -553,38 +562,28 @@ function LogScreen({
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      <Header label="PROOF, NOT PROMISES" title="Log it. Make it real." />
-      <Text style={styles.fieldLabel}>COMPLETED ACTIVITY</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        {goals.map((goal) => (
-          <Pressable
-            key={goal.id}
-            style={[styles.chip, goal.id === goalId && styles.chipActive]}
-            onPress={() => setGoalId(goal.id)}>
-            <Text style={[styles.chipText, goal.id === goalId && styles.chipTextActive]}>{goal.title}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <Header label="PROMISE KEPT" title="Complete it." />
+      <View style={styles.completionGoalCard}>
+        <Text style={styles.completionGoalCategory}>{activeGoal.category}</Text>
+        <Text style={styles.completionGoalTitle}>{activeGoal.title}</Text>
+      </View>
 
       <View style={styles.photoPicker}>
         {photo ? (
           <>
-            <Image source={{ uri: photo }} style={styles.selectedPhoto} alt="Selected activity proof" />
-            <Pressable style={styles.replacePhoto} onPress={() => choosePhoto('library')}>
-              <Text style={styles.replaceText}>Replace photo</Text>
+            <Image source={{ uri: photo }} style={styles.selectedPhoto} alt="Completion selfie" />
+            <Pressable style={styles.replacePhoto} onPress={takeSelfie}>
+              <Text style={styles.replaceText}>Retake selfie</Text>
             </Pressable>
           </>
         ) : (
           <View style={styles.emptyPhoto}>
             <View style={styles.cameraCircle}><Text style={styles.cameraIcon}>◎</Text></View>
-            <Text style={styles.photoTitle}>Add proof of the work</Text>
-            <Text style={styles.photoHint}>A quick, honest photo. It does not need to be perfect.</Text>
+            <Text style={styles.photoTitle}>Take your completion selfie</Text>
+            <Text style={styles.photoHint}>One tap. Your face is the proof.</Text>
             <View style={styles.photoActions}>
-              <Pressable style={styles.cameraButton} onPress={() => choosePhoto('camera')}>
-                <Text style={styles.cameraButtonText}>Take photo</Text>
-              </Pressable>
-              <Pressable style={styles.libraryButton} onPress={() => choosePhoto('library')}>
-                <Text style={styles.libraryButtonText}>Choose existing</Text>
+              <Pressable style={styles.cameraButton} onPress={takeSelfie}>
+                <Text style={styles.cameraButtonText}>Take selfie</Text>
               </Pressable>
             </View>
           </View>
@@ -592,25 +591,24 @@ function LogScreen({
       </View>
 
       <Text style={styles.fieldLabel}>HOW DID IT GO?</Text>
-      <TextInput
-        value={caption}
-        onChangeText={setCaption}
-        placeholder="One honest sentence about showing up..."
-        placeholderTextColor="#92968F"
-        style={styles.captionInput}
-        multiline
-        textAlignVertical="top"
-      />
-      <Text style={styles.fieldLabel}>DETAIL OR DURATION <Text style={styles.optional}>OPTIONAL</Text></Text>
-      <TextInput
-        value={duration}
-        onChangeText={setDuration}
-        placeholder="e.g. 45 minutes · 5.2 km · 4 meals"
-        placeholderTextColor="#92968F"
-        style={styles.input}
-      />
+      <View style={styles.moodGrid}>
+        {moodOptions.map((option) => (
+          <Pressable
+            key={option.id}
+            style={[styles.moodOption, mood === option.id && styles.moodOptionActive]}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setMood(option.id);
+            }}>
+            <Text style={styles.moodFace}>{option.face}</Text>
+            <Text style={[styles.moodLabel, mood === option.id && styles.moodLabelActive]}>
+              {option.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <Pressable disabled={!ready} style={[styles.shareButton, !ready && styles.disabled]} onPress={share}>
-        <Text style={styles.shareButtonText}>Share completion</Text>
+        <Text style={styles.shareButtonText}>Complete & share</Text>
         <Text style={styles.shareButtonText}>→</Text>
       </Pressable>
       <Text style={styles.shareNote}>Shared with friends only. They can respond with hearts and kudos.</Text>
@@ -890,7 +888,7 @@ function RemindersScreen({ onBack }: { onBack: () => void }) {
         <ReminderRow
           icon="◐"
           title="Evening check-in"
-          description="Log proof, reflect honestly, and close the day."
+          description="Take a selfie, choose how it felt, and close the day."
           reminder={reminders.evening}
           onToggle={() => toggleReminder('evening')}
           onEdit={() => setEditing(editing === 'evening' ? null : 'evening')}
@@ -974,7 +972,7 @@ async function scheduleDailyReminder(name: ReminderName, hour: number, minute: n
       title: morning ? 'Make today intentional.' : 'Close the loop.',
       body: morning
         ? 'Review the promises you chose for today.'
-        : 'Log your proof and complete your evening check-in.',
+        : 'Take a selfie and complete your evening check-in.',
       sound: true,
       data: { screen: morning ? 'today' : 'log' },
     },
@@ -1003,7 +1001,7 @@ function BottomNav({ tab, onChange }: { tab: Tab; onChange: (tab: Tab) => void }
   const items: { id: Tab; icon: string; label: string }[] = [
     { id: 'today', icon: '✓', label: 'Today' },
     { id: 'feed', icon: '◫', label: 'Feed' },
-    { id: 'log', icon: '+', label: 'Log' },
+    { id: 'log', icon: '✓', label: 'Complete' },
     { id: 'friends', icon: '♧', label: 'Friends' },
     { id: 'profile', icon: '○', label: 'Me' },
   ];
@@ -1090,9 +1088,9 @@ const styles = StyleSheet.create({
   strike: { textDecorationLine: 'line-through', opacity: 0.5 },
   doneBox: { width: 28, height: 28, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' },
   doneCheck: { color: C.white, fontSize: 14, fontWeight: '900' },
-  proofButton: { width: 42, alignItems: 'center', gap: 3 },
-  proofIcon: { color: C.ink, fontSize: 25, fontWeight: '300' },
-  proofText: { color: C.ink, fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  proofButton: { width: 62, alignItems: 'center', gap: 3 },
+  proofIcon: { color: C.ink, fontSize: 21, fontWeight: '700' },
+  proofText: { color: C.ink, fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
   weekCards: { gap: 12, paddingRight: 20 },
   weekCard: { width: 275, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, padding: 20 },
   weekTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 },
@@ -1135,27 +1133,27 @@ const styles = StyleSheet.create({
   reactionOn: { backgroundColor: C.blush, borderColor: C.coral },
   reactionIcon: { color: C.coral, fontSize: 15 },
   reactionText: { color: C.ink, fontSize: 10, fontWeight: '800' },
-  chips: { gap: 8, paddingBottom: 20 },
-  chip: { borderWidth: 1, borderColor: C.line, backgroundColor: C.paper, paddingHorizontal: 14, paddingVertical: 11 },
-  chipActive: { backgroundColor: C.ink, borderColor: C.ink },
-  chipText: { color: C.ink, fontSize: 10, fontWeight: '800' },
-  chipTextActive: { color: C.white },
-  photoPicker: { minHeight: 292, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, marginBottom: 18, overflow: 'hidden' },
-  emptyPhoto: { flex: 1, minHeight: 292, alignItems: 'center', justifyContent: 'center', padding: 25 },
+  completionGoalCard: { backgroundColor: C.ink, paddingHorizontal: 18, paddingVertical: 15, marginBottom: 12 },
+  completionGoalCategory: { color: C.coral, fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginBottom: 5 },
+  completionGoalTitle: { color: C.white, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 22 },
+  photoPicker: { minHeight: 260, backgroundColor: C.paper, borderWidth: 1, borderColor: C.line, marginBottom: 20, overflow: 'hidden' },
+  emptyPhoto: { flex: 1, minHeight: 260, alignItems: 'center', justifyContent: 'center', padding: 25 },
   cameraCircle: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#E7E9DD', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   cameraIcon: { color: C.ink, fontSize: 30 },
   photoTitle: { color: C.inkDark, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), fontSize: 22, marginBottom: 7 },
   photoHint: { color: C.muted, textAlign: 'center', fontSize: 11, lineHeight: 17, maxWidth: 260 },
-  photoActions: { flexDirection: 'row', gap: 8, marginTop: 20 },
-  cameraButton: { backgroundColor: C.ink, paddingHorizontal: 16, paddingVertical: 12 },
+  photoActions: { marginTop: 20 },
+  cameraButton: { backgroundColor: C.ink, paddingHorizontal: 28, paddingVertical: 13 },
   cameraButtonText: { color: C.white, fontSize: 10, fontWeight: '900' },
-  libraryButton: { borderWidth: 1, borderColor: C.ink, paddingHorizontal: 16, paddingVertical: 12 },
-  libraryButtonText: { color: C.ink, fontSize: 10, fontWeight: '900' },
-  selectedPhoto: { width: '100%', height: 310 },
+  selectedPhoto: { width: '100%', height: 275 },
   replacePhoto: { position: 'absolute', right: 12, bottom: 12, backgroundColor: 'rgba(16,44,37,.88)', paddingHorizontal: 12, paddingVertical: 9 },
   replaceText: { color: C.white, fontSize: 9, fontWeight: '900' },
-  captionInput: { minHeight: 112, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper, padding: 15, color: C.inkDark, fontSize: 14, lineHeight: 20 },
-  optional: { color: C.muted, fontWeight: '600' },
+  moodGrid: { flexDirection: 'row', gap: 6 },
+  moodOption: { flex: 1, minHeight: 76, alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper },
+  moodOptionActive: { borderColor: C.coral, backgroundColor: C.blush },
+  moodFace: { fontSize: 27 },
+  moodLabel: { color: C.muted, fontSize: 8, fontWeight: '800' },
+  moodLabelActive: { color: C.coral },
   shareButton: { height: 56, marginTop: 22, backgroundColor: C.coral, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   shareButtonText: { color: C.white, fontSize: 13, fontWeight: '900' },
   shareNote: { color: C.muted, textAlign: 'center', fontSize: 9, lineHeight: 15, marginTop: 10 },
